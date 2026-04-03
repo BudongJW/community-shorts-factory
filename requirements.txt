@@ -1,0 +1,22 @@
+# Community Scraper
+dc-api>=0.8.0
+
+# LLM
+anthropic>=0.27.0
+groq>=0.4.0
+
+# TTS
+edge-tts>=6.1.0
+
+# Video
+moviepy>=1.0.3
+Pillow>=10.0.0
+requests>=2.31.0
+
+# YouTube Upload
+google-auth>=2.0.0
+google-auth-oauthlib>=1.0.0
+google-api-python-client>=2.0.0
+
+# Utils
+python-dotenv>=1.0.0

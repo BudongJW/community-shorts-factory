@@ -1,0 +1,26 @@
+# Environment
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
+
+# Output
+output/audio/*
+output/video/*
+output/srt/*
+output/final/*
+!output/**/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+desktop.ini
+Thumbs.db
+.DS_Store
+
+# Logs
+*.log
