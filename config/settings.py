@@ -23,10 +23,6 @@ PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID", "")
 YOUTUBE_CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET", "")
 
-# TTS
-TTS_VOICE = "ko-KR-SunHiNeural"  # Edge TTS 한국어 여성 음성
-TTS_RATE = "+0%"
-
 # Video
 SHORTS_WIDTH = 1080
 SHORTS_HEIGHT = 1920
