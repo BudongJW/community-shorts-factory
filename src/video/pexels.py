@@ -1,12 +1,15 @@
 """Pexels API를 통한 무료 스톡 영상 다운로드."""
 
 import os
+import subprocess
 from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
 
-from config.settings import VIDEO_DIR
+import imageio_ffmpeg
+
+from config.settings import VIDEO_DIR, SHORTS_WIDTH, SHORTS_HEIGHT
 
 load_dotenv()
 
@@ -58,8 +61,30 @@ def download_video(video_data: dict, filename: str) -> Path:
     return output_path
 
 
+def generate_placeholder(filename: str = "placeholder", duration: int = 10) -> Path:
+    """Pexels API 키가 없을 때 단색 배경 테스트 영상을 생성한다."""
+    VIDEO_DIR.mkdir(parents=True, exist_ok=True)
+    output_path = VIDEO_DIR / f"{filename}.mp4"
+
+    cmd = [
+        imageio_ffmpeg.get_ffmpeg_exe(), "-y",
+        "-f", "lavfi",
+        "-i", f"color=c=0x1a1a2e:s={SHORTS_WIDTH}x{SHORTS_HEIGHT}:d={duration}:r=30",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+        str(output_path),
+    ]
+    subprocess.run(cmd, check=True, capture_output=True, text=True)
+    return output_path
+
+
 def fetch_videos(keywords: list[str], per_keyword: int = 2) -> list[Path]:
-    """여러 키워드로 영상을 검색하고 다운로드한다."""
+    """여러 키워드로 영상을 검색하고 다운로드한다.
+    Pexels API 키가 없으면 플레이스홀더 영상을 생성한다."""
+    api_key = os.getenv("PEXELS_API_KEY")
+    if not api_key:
+        print("  (PEXELS_API_KEY 미설정 — 플레이스홀더 영상 사용)")
+        return [generate_placeholder("placeholder_0", duration=15)]
+
     paths = []
     for i, kw in enumerate(keywords):
         videos = search_videos(kw, per_page=per_keyword)

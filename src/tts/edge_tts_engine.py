@@ -20,10 +20,10 @@ async def _synthesize(text: str, audio_path: Path, srt_path: Path) -> None:
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
                 f.write(chunk["data"])
-            elif chunk["type"] == "WordBoundary":
+            elif chunk["type"] in ("WordBoundary", "SentenceBoundary"):
                 submaker.feed(chunk)
 
-    srt_path.write_text(submaker.generate_subs(), encoding="utf-8")
+    srt_path.write_text(submaker.get_srt(), encoding="utf-8")
 
 
 def synthesize(text: str, filename: str = "narration") -> tuple[Path, Path]:

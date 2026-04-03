@@ -3,7 +3,11 @@
 import subprocess
 from pathlib import Path
 
+import imageio_ffmpeg
+
 from config.settings import FINAL_DIR, SHORTS_WIDTH, SHORTS_HEIGHT, SHORTS_MAX_DURATION
+
+FFMPEG_BIN = imageio_ffmpeg.get_ffmpeg_exe()
 
 
 def compose(
@@ -36,7 +40,7 @@ def compose(
     srt_escaped = str(srt_path.resolve()).replace("\\", "/").replace(":", "\\:")
 
     cmd = [
-        "ffmpeg", "-y",
+        FFMPEG_BIN, "-y",
         # 연결된 배경 영상
         "-f", "concat", "-safe", "0", "-i", str(concat_file),
         # 나레이션 오디오

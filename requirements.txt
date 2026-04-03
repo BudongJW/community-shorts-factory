@@ -1,5 +1,6 @@
 # Community Scraper
 dc-api>=0.8.0
+filetype>=1.2.0
 
 # LLM
 anthropic>=0.27.0

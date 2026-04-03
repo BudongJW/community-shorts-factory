@@ -1,10 +1,15 @@
-# Environment
+# Environment & Credentials
 .env
 __pycache__/
 *.pyc
 .venv/
 venv/
 node_modules/
+config/client_secret.json
+config/youtube_token.json
+*.credentials.json
+*token*.json
+!.env.example
 
 # Output
 output/audio/*
@@ -24,3 +29,6 @@ Thumbs.db
 
 # Logs
 *.log
+# Test & temp files
+_test_*
+output/trending_*.json
