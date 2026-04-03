@@ -11,6 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.collector.dcinside import run as collect_trending, save_posts
+from src.collector.filter import filter_topics
 from src.collector.history import filter_new_topics, record_topic
 from src.script_gen.generator import generate
 from src.tts.edge_tts_engine import synthesize
@@ -124,11 +125,36 @@ def pipeline(
     save_path = save_posts(posts)
     log.info(f"  → {len(posts)}개 게시글 수집 완료")
 
-    top5 = "\n".join(f"  - [{p.voteup_count}추천] {p.title}" for p in posts[:5])
-    log.info(f"  → 상위 5개 토픽:\n{top5}")
+    top_posts = "\n".join(f"  - [{p.voteup_count}추천] {p.title}" for p in posts[:10])
+    log.info(f"  → 상위 토픽:\n{top_posts}")
+
+    # ── Step 1.5: 니치 필터링 ──
+    log.info("\n[1.5/6] 니치 필터링 중 (바이럴 가능성 판단)...")
+    posts_for_filter = "\n".join(
+        f"- [{p.voteup_count}추천 | {p.view_count}조회 | 댓글{p.comment_count}] {p.title}"
+        for p in posts[:10]
+    )
+    filter_result = filter_topics(posts_for_filter, provider=llm_provider)
+
+    selected = filter_result.get("selected", [])
+    rejected = filter_result.get("rejected", [])
+    log.info(f"  → 선택: {len(selected)}개 / 제외: {len(rejected)}개")
+    for s in selected:
+        log.info(f"    ✓ [{s.get('score', '?')}점] {s['title']} — {s.get('angle', '')}")
+    for r in rejected:
+        log.info(f"    ✗ {r['title']} — {r.get('reason', '')}")
+
+    if not selected:
+        log.warning("  바이럴 가능한 토픽 없음 — 상위 3개로 대체 진행")
+        selected_titles = [p.title for p in posts[:3]]
+    else:
+        selected_titles = [s["title"] for s in selected]
+
+    # 선택된 토픽에 해당하는 posts만 필터
+    filtered_posts = [p for p in posts if p.title in selected_titles] or posts[:3]
 
     if dry_run:
-        topics_text = "\n".join(f"- [{p.voteup_count}추천] {p.title}" for p in posts[:5])
+        topics_text = "\n".join(f"- [{p.voteup_count}추천] {p.title}" for p in filtered_posts[:5])
         log.info(f"\n[dry-run] 대본 생성 테스트...")
         script = generate(topics_text, provider=llm_provider)
         log.info(f"  → 제목: {script.title}")
@@ -147,7 +173,7 @@ def pipeline(
             log.info(f"{'─' * 40}")
 
         run_id = datetime.now().strftime("%Y%m%d_%H%M%S") + (f"_{i}" if batch > 1 else "")
-        result = pipeline_single(posts, llm_provider, skip_upload, run_id)
+        result = pipeline_single(filtered_posts, llm_provider, skip_upload, run_id)
         if result:
             results.append(result)
 
