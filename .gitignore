@@ -35,3 +35,4 @@ output/topic_history.json
 # Test & temp files
 _test_*
 output/trending_*.json
+output/chat_preview*.png

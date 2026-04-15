@@ -5,18 +5,30 @@
 초기 자본 $0으로 운영 가능하도록 설계됨.
 
 ## 파이프라인 흐름
+
+### narration 모드 (기존)
 ```
 디시 HIT 갤러리 수집 (dc-api)
-→ LLM 대본 생성 (Groq 무료 / Claude)
-→ Edge TTS 음성+자막 (무료, 무제한)
-→ Pexels 배경 영상 (무료 API)
-→ FFmpeg 합성 (imageio_ffmpeg 번들)
-→ YouTube 업로드 (API v3)
+-> LLM 대본 생성 (Groq 무료 / Claude)
+-> Edge TTS 음성+자막 (무료, 무제한)
+-> Pexels 배경 영상 (무료 API)
+-> FFmpeg 합성 (imageio_ffmpeg 번들)
+-> YouTube 업로드 (API v3)
 ```
 
-## 현재 상태 (2026-04-03 기준)
-- **e2e 테스트 통과**: `--skip-upload` 모드로 전체 파이프라인 동작 확인됨
-- **FFmpeg**: 시스템 설치 불필요 — `imageio_ffmpeg` 번들 바이너리 사용
+### chat 모드 (채팅 썰 쇼츠)
+```
+디시 HIT 갤러리 수집 (dc-api)
+-> LLM 채팅 대본 생성 (Groq 무료 / Claude) -- 또는 JSON 직접 지정
+-> Pillow 채팅 UI 프레임 렌더링 (말풍선, 타이핑 인디케이터, 스크롤)
+-> FFmpeg 프레임 -> MP4 합성 (+ 선택적 BGM)
+-> YouTube 업로드 (API v3)
+```
+
+## 현재 상태 (2026-04-15 기준)
+- **e2e 테스트 통과**: 두 모드 모두 `--skip-upload`로 동작 확인됨
+- **chat 모드**: Pillow 기반 메신저 스타일 채팅 UI 렌더링 (API 비용 $0)
+- **FFmpeg**: 시스템 설치 불필요 -- `imageio_ffmpeg` 번들 바이너리 사용
 - **Edge TTS 7.x**: `SentenceBoundary` 이벤트 + `get_srt()` 사용 (구버전 API와 다름)
 - **Pexels**: API 키 없으면 자동으로 단색 플레이스홀더 영상 생성
 
@@ -38,14 +50,20 @@ cp .env.example .env       # API 키 설정
 
 ## 실행 명령
 ```bash
-# dry-run (수집 + 대본만)
+# ── narration 모드 (기존) ──
 PYTHONIOENCODING=utf-8 python -m src.orchestrator.main --dry-run
-
-# 업로드 제외 전체
 PYTHONIOENCODING=utf-8 python -m src.orchestrator.main --skip-upload
-
-# 풀 파이프라인
 PYTHONIOENCODING=utf-8 python -m src.orchestrator.main
+
+# ── chat 모드 (채팅 썰) ──
+# JSON 대본 직접 지정 (API 불필요)
+PYTHONIOENCODING=utf-8 python -m src.orchestrator.main --mode chat --json samples/chat_sample.json --skip-upload
+
+# 트렌딩 토픽에서 자동 채팅 대본 생성
+PYTHONIOENCODING=utf-8 python -m src.orchestrator.main --mode chat --skip-upload
+
+# 배치 생성
+PYTHONIOENCODING=utf-8 python -m src.orchestrator.main --mode chat --batch 5 --skip-upload
 ```
 > Windows 터미널 한글 깨짐 방지: `PYTHONIOENCODING=utf-8` 필수
 

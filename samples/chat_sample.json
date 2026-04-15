@@ -1,0 +1,22 @@
+{
+  "category": "커뮤니티 썰",
+  "title": "연봉 협상 레전드 ㅋㅋ",
+  "subtitle": "직장인 익명 커뮤니티",
+  "participants": ["팀장 박과장", "후배 김대리"],
+  "messages": [
+    {"sender": "팀장 박과장", "text": "김대리, 이번 연봉 협상 건으로 얘기 좀 하자", "side": "left"},
+    {"sender": "후배 김대리", "text": "네 팀장님, 말씀하세요", "side": "right"},
+    {"sender": "팀장 박과장", "text": "이번에 인상은 좀 어렵겠어요...", "side": "left"},
+    {"sender": "후배 김대리", "text": "네? 작년에 퍼포먼스가 좋았는데요", "side": "right"},
+    {"sender": "팀장 박과장", "text": "그건 아는데 회사 사정이...", "side": "left"},
+    {"sender": "후배 김대리", "text": "그럼 얼마나 올려주시는 건가요?", "side": "right"},
+    {"sender": "팀장 박과장", "text": "우리 가족 같은 회사잖아요", "side": "left"},
+    {"sender": "후배 김대리", "text": "그럼 가족처럼 월급 좀 올려주세요", "side": "right"},
+    {"sender": "팀장 박과장", "text": "...", "side": "left"},
+    {"sender": "팀장 박과장", "text": "올해도 동결이야", "side": "left"},
+    {"sender": "후배 김대리", "text": "가족이라며요 ㅋㅋㅋㅋ", "side": "right"}
+  ],
+  "result_text": "인상률: 0%",
+  "tags": ["연봉협상", "직장인", "커뮤니티썰", "월급", "회사생활"],
+  "topic_source": "연봉 협상 레전드"
+}
