@@ -18,19 +18,41 @@ CLIENT_SECRET_PATH = Path(__file__).parent.parent.parent / "config" / "client_se
 
 
 def get_youtube_service():
-    """YouTube API 서비스 객체를 생성한다."""
+    """YouTube API 서비스 객체를 생성한다.
+
+    토큰 소스 우선순위:
+    1. YOUTUBE_TOKEN_JSON 환경변수 (GitHub Actions용, JSON 문자열)
+    2. config/youtube_token.json 파일 (로컬 개발용)
+    3. OAuth 브라우저 플로우 (최초 인증용)
+    """
     creds = None
 
-    if TOKEN_PATH.exists():
+    # 1) 환경변수에서 토큰 로드 (CI/CD용)
+    token_json = os.getenv("YOUTUBE_TOKEN_JSON")
+    if token_json:
+        import json
+        creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
+
+    # 2) 파일에서 토큰 로드 (로컬용)
+    if not creds and TOKEN_PATH.exists():
         creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
+            # 갱신된 토큰 저장 (로컬 환경에서만)
+            if not token_json:
+                TOKEN_PATH.write_text(creds.to_json())
         else:
+            # CI 환경에서는 브라우저 플로우 불가
+            if os.getenv("CI"):
+                raise RuntimeError(
+                    "YouTube 토큰이 만료되었거나 없습니다. "
+                    "로컬에서 인증 후 YOUTUBE_TOKEN_JSON 시크릿을 업데이트하세요."
+                )
             flow = InstalledAppFlow.from_client_secrets_file(str(CLIENT_SECRET_PATH), SCOPES)
             creds = flow.run_local_server(port=0)
-        TOKEN_PATH.write_text(creds.to_json())
+            TOKEN_PATH.write_text(creds.to_json())
 
     return build("youtube", "v3", credentials=creds)
 

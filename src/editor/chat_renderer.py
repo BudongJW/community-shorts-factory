@@ -41,9 +41,33 @@ FOOTER_HEIGHT = 100              # 하단 결과 영역 높이
 CHAT_AREA_TOP = HEADER_HEIGHT + 20
 CHAT_AREA_BOTTOM = SHORTS_HEIGHT - FOOTER_HEIGHT - 20
 
-# ── 폰트 경로 (Windows) ──
-FONT_REGULAR = "C:/Windows/Fonts/malgun.ttf"
-FONT_BOLD = "C:/Windows/Fonts/malgunbd.ttf"
+# ── 폰트 경로 (크로스플랫폼) ──
+import platform
+
+def _find_font(bold: bool = False) -> str:
+    """OS에 맞는 한글 폰트 경로를 반환한다."""
+    if platform.system() == "Windows":
+        return "C:/Windows/Fonts/malgunbd.ttf" if bold else "C:/Windows/Fonts/malgun.ttf"
+    # Linux (GitHub Actions 등) - NanumGothic 사용
+    if bold:
+        candidates = [
+            "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
+            "/usr/share/fonts/nanum/NanumGothicBold.ttf",
+        ]
+    else:
+        candidates = [
+            "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+            "/usr/share/fonts/nanum/NanumGothic.ttf",
+        ]
+    for c in candidates:
+        if Path(c).exists():
+            return c
+    # fallback: 환경변수 또는 기본값
+    import os
+    return os.environ.get("FONT_BOLD" if bold else "FONT_REGULAR", candidates[0])
+
+FONT_REGULAR = _find_font(bold=False)
+FONT_BOLD = _find_font(bold=True)
 
 
 @dataclass
