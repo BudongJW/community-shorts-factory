@@ -25,12 +25,27 @@
 -> YouTube 업로드 (API v3)
 ```
 
-## 현재 상태 (2026-04-15 기준)
+## 현재 상태 (2026-04-16 기준)
 - **e2e 테스트 통과**: 두 모드 모두 `--skip-upload`로 동작 확인됨
 - **chat 모드**: Pillow 기반 메신저 스타일 채팅 UI 렌더링 (API 비용 $0)
+- **GitHub Actions**: 매일 09:00 KST 자동 생성 워크플로우 (`.github/workflows/daily-shorts.yml`)
+- **YouTube 업로드**: OAuth 토큰 환경변수 지원 (`YOUTUBE_TOKEN_JSON`), CI 호환
 - **FFmpeg**: 시스템 설치 불필요 -- `imageio_ffmpeg` 번들 바이너리 사용
 - **Edge TTS 7.x**: `SentenceBoundary` 이벤트 + `get_srt()` 사용 (구버전 API와 다름)
 - **Pexels**: API 키 없으면 자동으로 단색 플레이스홀더 영상 생성
+- **폰트**: Windows(맑은고딕) / Linux(NanumGothic) 자동 감지
+
+## GitHub 레포
+- **레포명**: `BudongJW/community-shorts-factory` (private)
+- **원래 로컬 폴더명**: `ai-shorts-pipeline`
+- remote origin: `https://github.com/BudongJW/community-shorts-factory.git`
+
+## 미완료 작업 (TODO)
+- YouTube OAuth 설정 미완료 (client_secret.json, youtube_token.json 모두 없음)
+- GitHub Secrets 미등록 (GROQ_API_KEY, YOUTUBE_TOKEN_JSON)
+- 채팅 UI 개선 여지: 카카오톡 UI 더 정교하게, 커뮤니티 게시판 스타일 템플릿 추가
+- narration 모드: Pexels 실제 테스트, 썸네일 자동 생성, ASS 자막 전환
+- 배경음악(BGM) 자동 첨부 미구현
 
 ## 환경 설정
 ```bash
