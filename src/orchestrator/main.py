@@ -18,6 +18,10 @@ import aiohttp
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.collector.dcinside import run as collect_trending, save_posts, _download_images
+from src.collector.cat_videos import collect_cat_clips
+from src.collector.ai_cat_images import generate_ai_cat_images
+from src.editor.cat_composer import compose_cat_short
+from src.editor.anime_cat_composer import compose_anime_cat
 from src.collector.filter import filter_topics
 from src.collector.history import filter_new_topics, record_topic
 from src.script_gen.generator import generate
@@ -181,6 +185,134 @@ def pipeline_chat_single(
     }
 
 
+REAL_CAT_TITLES = [
+    "POV: Your cat at 3am",
+    "Cats have zero chill",
+    "This cat chose violence",
+    "Cat.exe has stopped working",
+    "Why cats are unhinged",
+    "Average day as a cat owner",
+    "The audacity of this cat",
+    "Cats being absolute menaces",
+    "No thoughts, just cat",
+    "This is why we love cats",
+    "Cat logic makes no sense",
+    "Proof cats are liquid",
+    "My cat is broken",
+    "Normal day in cat world",
+    "Cats vs gravity",
+    "When your cat judges you",
+    "Cat mode: activated",
+    "The duality of cats",
+]
+
+ANIME_CAT_TITLES = [
+    "Cat Mecha Evolution",
+    "When cats unlock their final form",
+    "Cats but they're anime protagonists",
+    "Cat power level: OVER 9000",
+    "The cat cinematic universe",
+    "Anime cats hit different",
+    "Cat transformation sequence",
+    "If cats had superpowers",
+    "Cat fantasy adventure",
+    "Legendary cat warriors",
+]
+
+
+def pipeline_cat_single(
+    skip_upload: bool = False,
+    run_id: str = "",
+) -> dict | None:
+    """실사 고양이 쇼츠 생성 파이프라인."""
+    import random
+    if not run_id:
+        run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    log.info("[cat 1/3] 고양이 영상 수집 중...")
+    clips = collect_cat_clips(count=1)
+    if not clips:
+        log.error("  고양이 영상을 수집하지 못했습니다")
+        return None
+
+    clip = clips[0]
+    log.info(f"  -> {clip.name}")
+
+    log.info("[cat 2/3] Lofi Jazz + 세로 크롭 합성 중...")
+    final_path = compose_cat_short(clip, output_name=run_id)
+    log.info(f"  -> {final_path.name} ({final_path.stat().st_size // 1024}KB)")
+
+    video_id = ""
+    title = random.choice(REAL_CAT_TITLES)
+    tags = ["Shorts", "cat", "funny", "lofi", "jazz", "cute", "kitten", "chill", "cats", "meme"]
+    description = (
+        f"{title}\n\n"
+        "#Shorts #cat #funny #lofi #jazz #cute #kitten #chill #cats #meme\n\n"
+        "Lofi jazz + chaotic cats = perfect combo"
+    )
+
+    if skip_upload:
+        log.info("[cat 3/3] 업로드 건너뜀 (--skip-upload)")
+    else:
+        log.info("[cat 3/3] YouTube 업로드 중...")
+        video_id = upload(final_path, title, description, tags)
+        log.info(f"  -> https://www.youtube.com/shorts/{video_id}")
+
+    return {
+        "run_id": run_id,
+        "title": title,
+        "topic_source": clip.name,
+        "final_path": str(final_path),
+        "video_id": video_id,
+    }
+
+
+def pipeline_anime_cat_single(
+    skip_upload: bool = False,
+    run_id: str = "",
+) -> dict | None:
+    """AI 애니메이션 고양이 쇼츠 생성 파이프라인."""
+    import random
+    if not run_id:
+        run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    log.info("[anime-cat 1/3] AI 고양이 이미지 생성 중...")
+    img_dir = Path("output") / "ai_cats" / run_id
+    images = generate_ai_cat_images(num_images=5, output_dir=img_dir)
+    if not images:
+        log.error("  AI 이미지 생성 실패")
+        return None
+    log.info(f"  -> {len(images)}장 생성 완료")
+
+    log.info("[anime-cat 2/3] Ken Burns + Lofi Jazz 합성 중...")
+    final_path = compose_anime_cat(images, output_name=run_id)
+    log.info(f"  -> {final_path.name} ({final_path.stat().st_size // 1024}KB)")
+
+    video_id = ""
+    title = random.choice(ANIME_CAT_TITLES)
+    tags = ["Shorts", "cat", "anime", "lofi", "jazz", "mecha", "funny", "ai", "art", "cats"]
+    description = (
+        f"{title}\n\n"
+        "#Shorts #cat #anime #lofi #jazz #mecha #funny #ai #art #cats\n\n"
+        "AI-generated anime cats with lofi jazz"
+    )
+
+    if skip_upload:
+        log.info("[anime-cat 3/3] 업로드 건너뜀 (--skip-upload)")
+    else:
+        log.info("[anime-cat 3/3] YouTube 업로드 중...")
+        video_id = upload(final_path, title, description, tags)
+        log.info(f"  -> https://www.youtube.com/shorts/{video_id}")
+
+    return {
+        "run_id": run_id,
+        "title": title,
+        "topic_source": "ai_anime_cat",
+        "final_path": str(final_path),
+        "video_id": video_id,
+    }
+
+
 def pipeline_single(
     posts,
     llm_provider: str = "groq",
@@ -280,6 +412,39 @@ def pipeline(
     log.info(f"  AI Shorts Pipeline ({mode} mode)")
     log.info("=" * 50)
     log.info("")
+
+    # ── cat 모드: 고양이 영상 (실사 + AI 애니메이션 믹스) ──
+    if mode == "cat":
+        results = []
+        # batch 3 기준: 실사 2개 + 애니메이션 1개
+        anime_idx = batch - 1  # 마지막 1개를 애니메이션으로
+        for i in range(batch):
+            if batch > 1:
+                is_anime = (i == anime_idx)
+                label = "anime" if is_anime else "real"
+                log.info(f"\n{'--' * 20}")
+                log.info(f"  영상 {i + 1}/{batch} ({label})")
+                log.info(f"{'--' * 20}")
+            else:
+                is_anime = False
+
+            run_id = datetime.now().strftime("%Y%m%d_%H%M%S") + (f"_{i}" if batch > 1 else "")
+
+            if is_anime:
+                result = pipeline_anime_cat_single(skip_upload, run_id)
+            else:
+                result = pipeline_cat_single(skip_upload, run_id)
+
+            if result:
+                results.append(result)
+
+        log.info("")
+        log.info("=" * 50)
+        log.info(f"  Cat Pipeline 완료! ({len(results)}/{batch}편)")
+        log.info("=" * 50)
+        for r in results:
+            log.info(f"  [{r['run_id']}] {r['title']} -> {r['final_path']}")
+        return
 
     # ── chat 모드: JSON 직접 지정 시 수집 건너뜀 ──
     if mode == "chat" and json_path:
@@ -386,8 +551,8 @@ def main():
     parser.add_argument("--skip-upload", action="store_true", help="YouTube 업로드 건너뜀")
     parser.add_argument("--dry-run", action="store_true", help="수집+대본까지만")
     parser.add_argument("--batch", type=int, default=1, help="생성할 영상 수 (기본 1)")
-    parser.add_argument("--mode", choices=["narration", "chat"], default="narration",
-                        help="영상 모드: narration(나레이션) 또는 chat(채팅 썰)")
+    parser.add_argument("--mode", choices=["narration", "chat", "cat"], default="narration",
+                        help="영상 모드: narration(나레이션) / chat(채팅 썰) / cat(고양이)")
     parser.add_argument("--json", type=str, default=None,
                         help="chat 모드에서 직접 JSON 대본 경로 지정")
     args = parser.parse_args()
