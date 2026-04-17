@@ -18,7 +18,7 @@ from src.collector.dcinside import run as collect_trending, save_posts
 from src.collector.filter import filter_topics
 from src.collector.history import filter_new_topics, record_topic
 from src.script_gen.generator import generate
-from src.script_gen.chat_generator import generate_chat
+from src.script_gen.chat_generator import generate_chat, format_topics_with_comments
 from src.tts.edge_tts_engine import synthesize
 from src.video.pexels import fetch_videos
 from src.editor.composer import compose
@@ -57,14 +57,14 @@ def pipeline_chat_single(
             log.warning("  모든 토픽이 이전에 사용됨 -- 건너뜀")
             return None
 
-        topics_text = "\n".join(
-            f"- [{p.voteup_count}추천] {p.title}"
-            for p in posts[:5]
-            if p.title in new_titles
-        )
+        filtered = [p for p in posts[:5] if p.title in new_titles]
+
+        # ── 제목 + 댓글 기반 LLM 입력 생성 ──
+        topics_text = format_topics_with_comments(filtered)
 
         # ── LLM 채팅 대본 생성 ──
         log.info(f"[chat 2/4] 채팅 대본 생성 중 (provider: {llm_provider})...")
+        log.info(f"  -> 댓글 포함 게시글 {len(filtered)}개 입력")
         script_data = generate_chat(topics_text, provider=llm_provider)
 
     title = script_data.get("title", "커뮤니티 썰")
@@ -228,8 +228,9 @@ def pipeline(
         return
 
     # ── Step 1: 커뮤니티 트렌딩 수집 ──
-    log.info("[1/6] 디시인사이드 HIT 갤러리 수집 중...")
-    posts = collect_trending(num=num_posts)
+    with_comments = (mode == "chat")
+    log.info(f"[1/6] 디시인사이드 HIT 갤러리 수집 중{'(+댓글)' if with_comments else ''}...")
+    posts = collect_trending(num=num_posts, with_comments=with_comments)
     save_path = save_posts(posts)
     log.info(f"  -> {len(posts)}개 게시글 수집 완료")
 
@@ -262,9 +263,9 @@ def pipeline(
     filtered_posts = [p for p in posts if p.title in selected_titles] or posts[:3]
 
     if dry_run:
-        topics_text = "\n".join(f"- [{p.voteup_count}추천] {p.title}" for p in filtered_posts[:5])
         log.info(f"\n[dry-run] 대본 생성 테스트...")
         if mode == "chat":
+            topics_text = format_topics_with_comments(filtered_posts[:5])
             script_data = generate_chat(topics_text, provider=llm_provider)
             log.info(f"  -> 제목: {script_data.get('title', '')}")
             log.info(f"  -> 메시지 수: {len(script_data.get('messages', []))}개")
