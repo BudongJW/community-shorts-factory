@@ -24,6 +24,7 @@ from src.video.pexels import fetch_videos
 from src.editor.composer import compose
 from src.editor.chat_composer import compose_chat
 from src.editor.chat_renderer import ChatScript, ChatMessage, load_chat_script
+from src.editor.thumbnail import generate_thumbnail
 from src.uploader.youtube import upload
 from src.utils.logger import setup_logger
 
@@ -83,19 +84,42 @@ def pipeline_chat_single(
         source=script_data.get("topic_source", ""),
     )
 
-    # ── 채팅 영상 합성 ──
-    log.info("[chat 3/4] 채팅 영상 렌더링 중...")
+    # ── 채팅 영상 합성 (BGM + SFX 포함) ──
+    log.info("[chat 3/5] 채팅 영상 렌더링 중 (BGM + SFX)...")
     final_path = compose_chat(chat_script, output_name=run_id)
     log.info(f"  -> 최종: {final_path.name} ({final_path.stat().st_size // 1024}KB)")
+
+    # ── 썸네일 생성 ──
+    log.info("[chat 4/5] 썸네일 생성 중...")
+    thumb_path = generate_thumbnail(
+        title=title,
+        result_text=script_data.get("result_text", ""),
+        output_name=run_id,
+    )
+    log.info(f"  -> 썸네일: {thumb_path.name}")
 
     # ── YouTube 업로드 ──
     video_id = ""
     tags = script_data.get("tags", [])
+    # #Shorts 태그 필수 포함
+    if "#Shorts" not in tags and "Shorts" not in tags:
+        tags.insert(0, "Shorts")
+
+    # SEO 최적화된 설명
+    description_lines = [
+        title,
+        "",
+        " ".join(f"#{t.lstrip('#')}" for t in tags),
+        "",
+        "---",
+        "커뮤니티 인기글을 채팅 형식으로 재구성한 쇼츠입니다.",
+    ]
+    description = "\n".join(description_lines)
+
     if skip_upload:
-        log.info("[chat 4/4] 업로드 건너뜀 (--skip-upload)")
+        log.info("[chat 5/5] 업로드 건너뜀 (--skip-upload)")
     else:
-        log.info("[chat 4/4] YouTube 업로드 중...")
-        description = f"#{' #'.join(tags)}" if tags else ""
+        log.info("[chat 5/5] YouTube 업로드 중...")
         video_id = upload(final_path, title, description, tags)
         log.info(f"  -> https://www.youtube.com/shorts/{video_id}")
 
@@ -108,6 +132,7 @@ def pipeline_chat_single(
         "title": title,
         "topic_source": topic_source,
         "final_path": str(final_path),
+        "thumb_path": str(thumb_path),
         "video_id": video_id,
     }
 
