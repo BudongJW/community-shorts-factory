@@ -37,6 +37,14 @@ CHAT_SCRIPT_PROMPT = """당신은 한국 커뮤니티 인기글을 "카카오톡
 - **댓글 활용**: 짧은 감탄사(ㅋㅋ, ㄹㅇ) 말고, 구체적 내용이 담긴 댓글을 우선 활용.
 - 광고/스팸 댓글은 무시.
 
+## 이미지 삽입 규칙 (이미지가 있는 게시글인 경우)
+- 게시글에 이미지가 포함되어 있으면, 대화 중 이미지를 공유하는 메시지를 넣어라.
+- 이미지 메시지에는 `"image_index"` 필드를 추가: 원본 게시글 이미지 순번 (0부터 시작).
+- 이미지 메시지의 text는 짧은 설명 또는 빈 문자열 ("이거 봐 ㅋㅋ", "사진 보내줄게" 등).
+- 이미지는 2~4장 정도만 핵심적인 것을 골라서 사용 (전부 넣지 마라).
+- 이미지는 주로 left(글쓴이) 쪽에서 보내는 것이 자연스럽다.
+- 이미지가 없는 게시글이면 image_index를 사용하지 마라.
+
 ## 바이럴 규칙
 
 ### 훅 (첫 메시지)
@@ -80,6 +88,7 @@ CHAT_SCRIPT_PROMPT = """당신은 한국 커뮤니티 인기글을 "카카오톡
   "messages": [
     {{"sender": "이름", "text": "상황설명 (구체적으로)", "side": "left"}},
     {{"sender": "이름", "text": "반응 (질문/공감)", "side": "right"}},
+    {{"sender": "이름", "text": "이거 봐 ㅋㅋ", "side": "left", "image_index": 0}},
     {{"sender": "이름", "text": "전개 (디테일 추가)", "side": "left"}},
     {{"sender": "이름", "text": "...", "side": "right"}}
   ],
@@ -94,6 +103,9 @@ def format_post_with_comments(post) -> str:
     lines = [
         f"### [{post.voteup_count}추천 | {post.view_count}조회 | 댓글{post.comment_count}] {post.title}",
     ]
+
+    if hasattr(post, 'image_urls') and post.image_urls:
+        lines.append(f"\n[이미지 {len(post.image_urls)}장 포함 게시글 - image_index 0~{len(post.image_urls)-1} 사용 가능]")
 
     if post.content:
         # 본문 텍스트 (이미지 태그 제거 후 실제 텍스트만)

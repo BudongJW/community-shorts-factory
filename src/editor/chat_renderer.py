@@ -36,6 +36,8 @@ BUBBLE_PAD_H = 24                # 말풍선 내부 좌우 패딩
 BUBBLE_PAD_V = 18                # 말풍선 내부 상하 패딩
 MSG_GAP = 20                     # 메시지 간 간격
 AVATAR_SIZE = 44                 # 아바타 크기
+IMG_BUBBLE_MAX_W = int(SHORTS_WIDTH * 0.55)  # 이미지 버블 최대 너비
+IMG_BUBBLE_MAX_H = 360           # 이미지 버블 최대 높이
 HEADER_HEIGHT = 200              # 헤더 높이
 FOOTER_HEIGHT = 100              # 하단 결과 영역 높이
 CHAT_AREA_TOP = HEADER_HEIGHT + 20
@@ -77,6 +79,7 @@ class ChatMessage:
     text: str           # 메시지 내용
     side: str = "left"  # "left" (상대방) 또는 "right" (나)
     emoji: str = ""     # 프로필 이모지 (텍스트로 대체)
+    image_path: str = ""  # 이미지 경로 (카톡 사진 공유 스타일)
 
 
 @dataclass
@@ -252,13 +255,35 @@ def _draw_footer(
 
 
 def _calc_bubble_height(
-    text: str, font: ImageFont.FreeTypeFont, max_text_w: int
+    text: str, font: ImageFont.FreeTypeFont, max_text_w: int,
+    image_path: str = "",
 ) -> int:
     """말풍선의 높이를 계산한다."""
-    lines = _wrap_text(text, font, max_text_w)
-    line_h = font.getbbox("가")[3] - font.getbbox("가")[1]
-    text_h = len(lines) * (line_h + 6)
-    return text_h + BUBBLE_PAD_V * 2
+    h = 0
+
+    # 이미지가 있으면 이미지 높이 추가
+    if image_path and Path(image_path).exists():
+        try:
+            with Image.open(image_path) as img:
+                iw, ih = img.size
+                ratio = min(IMG_BUBBLE_MAX_W / iw, IMG_BUBBLE_MAX_H / ih, 1.0)
+                h += int(ih * ratio) + BUBBLE_PAD_V * 2 + 8
+        except Exception:
+            pass
+
+    # 텍스트가 있으면 텍스트 높이 추가
+    if text:
+        lines = _wrap_text(text, font, max_text_w)
+        line_h = font.getbbox("가")[3] - font.getbbox("가")[1]
+        text_h = len(lines) * (line_h + 6)
+        if image_path:
+            h += text_h + BUBBLE_PAD_V  # 이미지 아래 캡션
+        else:
+            h += text_h + BUBBLE_PAD_V * 2
+    elif not image_path:
+        h += BUBBLE_PAD_V * 2
+
+    return h
 
 
 def _draw_avatar(
@@ -294,34 +319,73 @@ def _draw_avatar(
     )
 
 
+def _load_bubble_image(image_path: str) -> Image.Image | None:
+    """이미지 버블용 이미지를 로드하고 리사이즈한다."""
+    try:
+        p = Path(image_path)
+        if not p.exists():
+            return None
+        img = Image.open(p).convert("RGB")
+        iw, ih = img.size
+        ratio = min(IMG_BUBBLE_MAX_W / iw, IMG_BUBBLE_MAX_H / ih, 1.0)
+        new_w = int(iw * ratio)
+        new_h = int(ih * ratio)
+        return img.resize((new_w, new_h), Image.LANCZOS)
+    except Exception:
+        return None
+
+
 def _draw_bubble(
     draw: ImageDraw.ImageDraw,
     msg: ChatMessage,
     y: int,
     fonts: dict,
+    frame_img: Image.Image | None = None,
 ) -> int:
     """하나의 말풍선을 그리고, 사용한 높이를 반환한다.
+
+    Args:
+        frame_img: 이미지 paste가 필요할 때 전달 (draw는 ImageDraw이므로)
 
     Returns:
         이 메시지가 차지한 총 높이 (이름 + 말풍선 + 간격)
     """
     font = fonts["message"]
     max_text_w = BUBBLE_MAX_W - BUBBLE_PAD_H * 2
-    lines = _wrap_text(msg.text, font, max_text_w)
-    line_h = font.getbbox("가")[3] - font.getbbox("가")[1]
-    text_h = len(lines) * (line_h + 6) - 6
+    has_image = bool(msg.image_path)
+    bubble_img = _load_bubble_image(msg.image_path) if has_image else None
+    has_text = bool(msg.text.strip())
 
-    # 말풍선 실제 너비 계산
-    max_line_w = max(
-        (font.getbbox(line)[2] - font.getbbox(line)[0]) for line in lines
-    )
-    bubble_w = max_line_w + BUBBLE_PAD_H * 2
-    bubble_h = text_h + BUBBLE_PAD_V * 2
+    # 텍스트 계산
+    lines = []
+    line_h = 0
+    text_h = 0
+    max_line_w = 0
+    if has_text:
+        lines = _wrap_text(msg.text, font, max_text_w)
+        line_h = font.getbbox("가")[3] - font.getbbox("가")[1]
+        text_h = len(lines) * (line_h + 6) - 6
+        max_line_w = max(
+            (font.getbbox(line)[2] - font.getbbox(line)[0]) for line in lines
+        )
+
+    # 말풍선 크기 계산
+    if bubble_img:
+        img_w, img_h = bubble_img.size
+        bubble_w = img_w + BUBBLE_PAD_H * 2
+        bubble_h = BUBBLE_PAD_V + img_h
+        if has_text:
+            bubble_w = max(bubble_w, max_line_w + BUBBLE_PAD_H * 2)
+            bubble_h += 8 + text_h + BUBBLE_PAD_V
+        else:
+            bubble_h += BUBBLE_PAD_V
+    else:
+        bubble_w = max_line_w + BUBBLE_PAD_H * 2
+        bubble_h = text_h + BUBBLE_PAD_V * 2
 
     total_h = 0
 
     if msg.side == "left":
-        # 아바타 + 이름 + 말풍선
         avatar_x = PADDING
         bubble_x = PADDING + AVATAR_SIZE + 12
 
@@ -335,10 +399,8 @@ def _draw_bubble(
         name_h = fonts["sender"].getbbox(msg.sender)[3] - fonts["sender"].getbbox(msg.sender)[1]
         total_h += name_h + 8
 
-        # 아바타
         _draw_avatar(draw, avatar_x, y, msg.sender, fonts, "left")
 
-        # 말풍선
         bx = bubble_x
         by = y + total_h
         _draw_rounded_rect(
@@ -348,16 +410,23 @@ def _draw_bubble(
             BUBBLE_LEFT,
         )
 
+        # 이미지
+        cy = by + BUBBLE_PAD_V
+        if bubble_img and frame_img:
+            ix = bx + BUBBLE_PAD_H
+            # 둥근 모서리 마스크 적용
+            _paste_rounded_image(frame_img, bubble_img, ix, cy, 12)
+            cy += bubble_img.size[1] + 8
+
         # 텍스트
-        ty = by + BUBBLE_PAD_V
-        for line in lines:
-            draw.text((bx + BUBBLE_PAD_H, ty), line, fill=TEXT_WHITE, font=font)
-            ty += line_h + 6
+        if has_text:
+            for line in lines:
+                draw.text((bx + BUBBLE_PAD_H, cy), line, fill=TEXT_WHITE, font=font)
+                cy += line_h + 6
 
         total_h += bubble_h
 
     else:  # right
-        # 이름 (오른쪽 정렬)
         name_bbox = fonts["sender"].getbbox(msg.sender)
         name_w = name_bbox[2] - name_bbox[0]
         name_x = SHORTS_WIDTH - PADDING - AVATAR_SIZE - 12 - name_w
@@ -370,11 +439,9 @@ def _draw_bubble(
         name_h = name_bbox[3] - name_bbox[1]
         total_h += name_h + 8
 
-        # 아바타 (오른쪽)
         avatar_x = SHORTS_WIDTH - PADDING - AVATAR_SIZE
         _draw_avatar(draw, avatar_x, y, msg.sender, fonts, "right")
 
-        # 말풍선 (오른쪽 정렬)
         bx = SHORTS_WIDTH - PADDING - AVATAR_SIZE - 12 - bubble_w
         by = y + total_h
         _draw_rounded_rect(
@@ -384,15 +451,33 @@ def _draw_bubble(
             BUBBLE_RIGHT,
         )
 
+        # 이미지
+        cy = by + BUBBLE_PAD_V
+        if bubble_img and frame_img:
+            ix = bx + BUBBLE_PAD_H
+            _paste_rounded_image(frame_img, bubble_img, ix, cy, 12)
+            cy += bubble_img.size[1] + 8
+
         # 텍스트
-        ty = by + BUBBLE_PAD_V
-        for line in lines:
-            draw.text((bx + BUBBLE_PAD_H, ty), line, fill=TEXT_WHITE, font=font)
-            ty += line_h + 6
+        if has_text:
+            for line in lines:
+                draw.text((bx + BUBBLE_PAD_H, cy), line, fill=TEXT_WHITE, font=font)
+                cy += line_h + 6
 
         total_h += bubble_h
 
     return total_h + MSG_GAP
+
+
+def _paste_rounded_image(
+    frame: Image.Image, img: Image.Image, x: int, y: int, radius: int
+):
+    """둥근 모서리 마스크를 적용하여 이미지를 프레임에 붙인다."""
+    w, h = img.size
+    mask = Image.new("L", (w, h), 0)
+    mask_draw = ImageDraw.Draw(mask)
+    mask_draw.rounded_rectangle((0, 0, w, h), radius=radius, fill=255)
+    frame.paste(img, (x, y), mask)
 
 
 def _draw_typing_indicator(
@@ -558,7 +643,7 @@ def _iter_frames(
         y = CHAT_AREA_TOP - scroll_offset
         for i in range(visible_count):
             if y + msg_heights[i] > CHAT_AREA_TOP - 20:
-                _draw_bubble(draw, script.messages[i], max(y, CHAT_AREA_TOP), fonts)
+                _draw_bubble(draw, script.messages[i], max(y, CHAT_AREA_TOP), fonts, frame_img=img)
             y += msg_heights[i]
 
         if typing_msg_idx >= 0:
@@ -638,6 +723,7 @@ def render_frames_iter(
             msg.text,
             fonts["message"],
             BUBBLE_MAX_W - BUBBLE_PAD_H * 2,
+            image_path=msg.image_path,
         )
         name_h = fonts["sender"].getbbox(msg.sender)[3] - fonts["sender"].getbbox(msg.sender)[1]
         msg_heights.append(h + name_h + 8 + MSG_GAP)

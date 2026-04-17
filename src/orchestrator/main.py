@@ -7,14 +7,17 @@
 """
 
 import argparse
+import asyncio
 import json
 import sys
 from datetime import datetime
 from pathlib import Path
 
+import aiohttp
+
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.collector.dcinside import run as collect_trending, save_posts
+from src.collector.dcinside import run as collect_trending, save_posts, _download_images
 from src.collector.filter import filter_topics
 from src.collector.history import filter_new_topics, record_topic
 from src.script_gen.generator import generate
@@ -72,8 +75,49 @@ def pipeline_chat_single(
     log.info(f"  -> 제목: {title}")
     log.info(f"  -> 메시지 수: {len(script_data.get('messages', []))}개")
 
-    # ChatScript 객체 생성
-    messages = [ChatMessage(**m) for m in script_data.get("messages", [])]
+    # ── 이미지 다운로드 (image_index가 있는 메시지용) ──
+    image_paths_map: dict[int, Path] = {}
+    has_image_msgs = any(
+        "image_index" in m for m in script_data.get("messages", [])
+    )
+    if has_image_msgs and posts:
+        # LLM이 선택한 원본 게시글 찾기
+        topic_source = script_data.get("topic_source", "")
+        source_post = None
+        for p in posts:
+            if p.title == topic_source and getattr(p, "image_urls", []):
+                source_post = p
+                break
+        # 못 찾으면 이미지가 있는 첫 번째 게시글 사용
+        if not source_post:
+            for p in posts:
+                if getattr(p, "image_urls", []):
+                    source_post = p
+                    break
+
+        if source_post and source_post.image_urls:
+            log.info(f"  [image] 이미지 {len(source_post.image_urls)}장 다운로드 중...")
+            img_dir = Path("output") / "images" / run_id
+            try:
+                async def _dl():
+                    async with aiohttp.ClientSession() as session:
+                        return await _download_images(
+                            source_post.image_urls, session, img_dir, max_images=20
+                        )
+                dl_paths = asyncio.run(_dl())
+                for i, p in enumerate(dl_paths):
+                    image_paths_map[i] = p
+                log.info(f"  [image] {len(dl_paths)}장 다운로드 완료")
+            except Exception as e:
+                log.warning(f"  [image] 다운로드 실패: {e}")
+
+    # ChatScript 객체 생성 (image_index -> image_path 변환)
+    raw_messages = script_data.get("messages", [])
+    for m in raw_messages:
+        idx = m.pop("image_index", None)
+        if idx is not None and idx in image_paths_map:
+            m["image_path"] = str(image_paths_map[idx])
+    messages = [ChatMessage(**m) for m in raw_messages]
     chat_script = ChatScript(
         category=script_data.get("category", "커뮤니티 썰"),
         title=title,

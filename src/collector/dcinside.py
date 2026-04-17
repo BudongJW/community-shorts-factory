@@ -35,6 +35,7 @@ class TrendingPost:
     content: str = ""
     comments: list[Comment] = field(default_factory=list)
     gallery_id: str = ""
+    image_urls: list[str] = field(default_factory=list)
 
 
 # 수집 대상 갤러리 (id, is_minor)
@@ -53,13 +54,17 @@ _PC_HEADERS = {
 
 async def _fetch_content_pc(
     board_id: str, doc_id: int, session: aiohttp.ClientSession
-) -> str:
-    """PC 웹에서 게시글 본문 텍스트를 스크래핑한다 (dc_api 폴백)."""
+) -> tuple[str, list[str]]:
+    """PC 웹에서 게시글 본문 텍스트 + 이미지 URL을 스크래핑한다.
+
+    Returns:
+        (본문 텍스트, 이미지 URL 리스트)
+    """
     url = f"https://gall.dcinside.com/board/view/?id={board_id}&no={doc_id}"
     try:
         async with session.get(url, headers=_PC_HEADERS, timeout=aiohttp.ClientTimeout(total=10)) as resp:
             if resp.status != 200:
-                return ""
+                return "", []
             html = await resp.text()
 
             match = re.search(
@@ -67,17 +72,67 @@ async def _fetch_content_pc(
                 html, re.DOTALL,
             )
             if not match:
-                return ""
+                return "", []
 
             raw = match.group(1)
+
+            # 이미지 URL 추출 (dcimg viewimage만, dccon 제외)
+            image_urls = re.findall(
+                r'<img[^>]*src="(https://dcimg\d*\.dcinside\.com/viewimage\.php[^"]*)"',
+                raw,
+            )
+
             # HTML -> 텍스트 변환
             text = re.sub(r"<br\s*/?>", "\n", raw)
-            text = re.sub(r"<img[^>]*>", "", text)       # 이미지 태그 제거
-            text = re.sub(r"<[^>]+>", "", text)           # 나머지 태그 제거
+            text = re.sub(r"<img[^>]*>", "", text)
+            text = re.sub(r"<[^>]+>", "", text)
             text = re.sub(r"\n{3,}", "\n\n", text).strip()
-            return text
+            return text, image_urls
     except Exception:
-        return ""
+        return "", []
+
+
+async def _download_images(
+    image_urls: list[str],
+    session: aiohttp.ClientSession,
+    output_dir: Path,
+    max_images: int = 20,
+) -> list[Path]:
+    """이미지 URL 리스트를 다운로드한다.
+
+    Returns:
+        다운로드된 이미지 파일 경로 리스트
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    downloaded = []
+
+    headers = {
+        **_PC_HEADERS,
+        "Referer": "https://gall.dcinside.com/",
+    }
+
+    for i, url in enumerate(image_urls[:max_images]):
+        try:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status != 200:
+                    continue
+                data = await resp.read()
+                if len(data) < 1000:  # 너무 작으면 에러 이미지
+                    continue
+                ext = "jpg"
+                ct = resp.headers.get("Content-Type", "")
+                if "png" in ct:
+                    ext = "png"
+                elif "gif" in ct:
+                    ext = "gif"
+                path = output_dir / f"img_{i:03d}.{ext}"
+                path.write_bytes(data)
+                downloaded.append(path)
+                await asyncio.sleep(0.3)
+        except Exception:
+            continue
+
+    return downloaded
 
 
 async def collect_posts(
@@ -123,7 +178,9 @@ async def collect_posts(
                     pass
                 # dc_api 실패 시 PC 웹 폴백 (HIT 갤러리 등)
                 if not post.content:
-                    post.content = await _fetch_content_pc(board_id, index.id, http)
+                    text, imgs = await _fetch_content_pc(board_id, index.id, http)
+                    post.content = text
+                    post.image_urls = imgs
                     await asyncio.sleep(REQUEST_DELAY)
 
             if with_comments:
