@@ -503,6 +503,16 @@ def build_timeline(
 
     result_frame = current_frame + int(result_delay_sec * fps)
     total_frames = result_frame + int(hold_end_sec * fps)
+
+    # Shorts 55초 제한 (60초에 약간 여유)
+    max_frames = int(55 * fps)
+    if total_frames > max_frames:
+        # 비례적으로 타이밍 압축
+        scale = max_frames / total_frames
+        timeline = [(int(ts * scale), int(ma * scale)) for ts, ma in timeline]
+        result_frame = int(result_frame * scale)
+        total_frames = max_frames
+
     return timeline, result_frame, total_frames
 
 

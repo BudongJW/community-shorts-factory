@@ -254,8 +254,9 @@ def pipeline(
 
     # ── Step 1: 커뮤니티 트렌딩 수집 ──
     with_comments = (mode == "chat")
-    log.info(f"[1/6] 디시인사이드 HIT 갤러리 수집 중{'(+댓글)' if with_comments else ''}...")
-    posts = collect_trending(num=num_posts, with_comments=with_comments)
+    with_content = (mode == "chat")  # 채팅 모드에서는 본문도 수집 (맥락 파악용)
+    log.info(f"[1/6] 디시인사이드 HIT 갤러리 수집 중{'(+본문+댓글)' if with_comments else ''}...")
+    posts = collect_trending(num=num_posts, with_content=with_content, with_comments=with_comments)
     save_path = save_posts(posts)
     log.info(f"  -> {len(posts)}개 게시글 수집 완료")
 

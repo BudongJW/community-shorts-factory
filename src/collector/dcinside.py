@@ -1,14 +1,17 @@
 """디시인사이드 갤러리 트렌딩 게시글 수집기.
 
 본문 + 댓글까지 수집하여 LLM 대본 생성의 품질을 높인다.
+HIT 갤러리는 dc_api로 본문을 못 가져오므로 PC 웹 스크래핑 폴백을 사용한다.
 """
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
 
+import aiohttp
 import dc_api
 
 
@@ -42,6 +45,40 @@ DEFAULT_GALLERIES = [
 # 요청 간 대기 시간 (초) - 차단 방지
 REQUEST_DELAY = 0.5
 
+# PC 스크래핑용 헤더
+_PC_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+}
+
+
+async def _fetch_content_pc(
+    board_id: str, doc_id: int, session: aiohttp.ClientSession
+) -> str:
+    """PC 웹에서 게시글 본문 텍스트를 스크래핑한다 (dc_api 폴백)."""
+    url = f"https://gall.dcinside.com/board/view/?id={board_id}&no={doc_id}"
+    try:
+        async with session.get(url, headers=_PC_HEADERS, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status != 200:
+                return ""
+            html = await resp.text()
+
+            match = re.search(
+                r'<div class="write_div"[^>]*>(.*?)</div>\s*(?:<script|<div class="btn)',
+                html, re.DOTALL,
+            )
+            if not match:
+                return ""
+
+            raw = match.group(1)
+            # HTML -> 텍스트 변환
+            text = re.sub(r"<br\s*/?>", "\n", raw)
+            text = re.sub(r"<img[^>]*>", "", text)       # 이미지 태그 제거
+            text = re.sub(r"<[^>]+>", "", text)           # 나머지 태그 제거
+            text = re.sub(r"\n{3,}", "\n\n", text).strip()
+            return text
+    except Exception:
+        return ""
+
 
 async def collect_posts(
     board_id: str = "hit",
@@ -63,7 +100,7 @@ async def collect_posts(
     """
     posts = []
 
-    async with dc_api.API() as api:
+    async with dc_api.API() as api, aiohttp.ClientSession() as http:
         async for index in api.board(board_id=board_id, num=num, is_minor=is_minor):
             post = TrendingPost(
                 id=index.id,
@@ -84,6 +121,10 @@ async def collect_posts(
                     await asyncio.sleep(REQUEST_DELAY)
                 except Exception:
                     pass
+                # dc_api 실패 시 PC 웹 폴백 (HIT 갤러리 등)
+                if not post.content:
+                    post.content = await _fetch_content_pc(board_id, index.id, http)
+                    await asyncio.sleep(REQUEST_DELAY)
 
             if with_comments:
                 try:
