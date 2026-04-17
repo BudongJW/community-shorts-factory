@@ -435,67 +435,98 @@ def _draw_typing_indicator(
         )
 
 
-def render_frames(
+def _apply_zoom(img: Image.Image, factor: float) -> Image.Image:
+    """이미지 중앙 기준 줌 효과를 적용한다."""
+    if abs(factor - 1.0) < 0.001:
+        return img
+    w, h = img.size
+    new_w = int(w * factor)
+    new_h = int(h * factor)
+    zoomed = img.resize((new_w, new_h), Image.LANCZOS)
+    # 중앙 크롭
+    left = (new_w - w) // 2
+    top = (new_h - h) // 2
+    return zoomed.crop((left, top, left + w, top + h))
+
+
+def _apply_shake(img: Image.Image, intensity: int, frame: int) -> Image.Image:
+    """화면 흔들림 효과를 적용한다."""
+    if intensity <= 0:
+        return img
+    dx = int(intensity * math.sin(frame * 2.5))
+    dy = int(intensity * math.cos(frame * 3.3))
+    w, h = img.size
+    shifted = Image.new("RGB", (w, h), BG_COLOR)
+    shifted.paste(img, (dx, dy))
+    return shifted
+
+
+def build_timeline(
     script: ChatScript,
     fps: int = SHORTS_FPS,
-    msg_appear_sec: float = 1.5,
+    msg_durations: list[float] | None = None,
     typing_sec: float = 0.8,
     result_delay_sec: float = 1.0,
     hold_end_sec: float = 3.0,
-) -> list[Image.Image]:
-    """채팅 대본을 프레임 시퀀스로 렌더링한다.
+    min_display_sec: float = 1.2,
+) -> tuple[list[tuple[int, int]], int, int]:
+    """타임라인을 계산한다.
 
     Args:
         script: 채팅 대본
         fps: 프레임 레이트
-        msg_appear_sec: 각 메시지 표시 후 다음까지 대기 시간
-        typing_sec: 타이핑 인디케이터 표시 시간
-        result_delay_sec: 마지막 메시지 후 결과 표시까지 대기
+        msg_durations: 각 메시지의 TTS 재생 시간 리스트 (None이면 고정 1.5초)
+        typing_sec: 타이핑 인디케이터 시간
+        result_delay_sec: 결과 표시 딜레이
         hold_end_sec: 마지막 프레임 유지 시간
+        min_display_sec: 메시지 최소 표시 시간
 
     Returns:
-        PIL Image 리스트
+        (timeline, result_frame, total_frames)
+        timeline: [(typing_start, msg_appear), ...]
     """
-    fonts = _get_fonts()
-    frames: list[Image.Image] = []
-
-    num_msgs = len(script.messages)
-
-    # 타임라인 계산: 각 메시지별 (typing_start, msg_appear) 프레임
     timeline = []
-    current_frame = int(1.0 * fps)  # 1초 후 첫 메시지 시작
+    current_frame = int(1.0 * fps)
 
     for i, msg in enumerate(script.messages):
         typing_start = current_frame
         msg_appear = typing_start + int(typing_sec * fps)
         timeline.append((typing_start, msg_appear))
-        current_frame = msg_appear + int(msg_appear_sec * fps)
 
-    # 결과 표시 프레임
+        # TTS 기반 표시 시간 또는 고정값
+        if msg_durations and i < len(msg_durations):
+            display_sec = max(msg_durations[i] + 0.3, min_display_sec)
+        else:
+            display_sec = 1.5
+
+        current_frame = msg_appear + int(display_sec * fps)
+
     result_frame = current_frame + int(result_delay_sec * fps)
     total_frames = result_frame + int(hold_end_sec * fps)
+    return timeline, result_frame, total_frames
 
-    # 각 메시지의 y 위치를 사전 계산
-    msg_heights = []
-    for msg in script.messages:
-        h = _calc_bubble_height(
-            msg.text,
-            fonts["message"],
-            BUBBLE_MAX_W - BUBBLE_PAD_H * 2,
-        )
-        # 이름 높이 추가
-        name_h = fonts["sender"].getbbox(msg.sender)[3] - fonts["sender"].getbbox(msg.sender)[1]
-        msg_heights.append(h + name_h + 8 + MSG_GAP)
 
-    # 프레임 생성
+def _iter_frames(
+    script: ChatScript,
+    fonts: dict,
+    timeline: list[tuple[int, int]],
+    msg_heights: list[int],
+    result_frame: int,
+    total_frames: int,
+    fps: int,
+    enable_effects: bool = True,
+):
+    """프레임을 하나씩 yield하는 제너레이터 (메모리 절약)."""
+    hook_appear = timeline[0][1] if timeline else 0
+    hook_end = hook_appear + int(0.5 * fps)
+    result_shake_end = result_frame + int(0.4 * fps)
+
     for f_idx in range(total_frames):
         img = Image.new("RGB", (SHORTS_WIDTH, SHORTS_HEIGHT), BG_COLOR)
         draw = ImageDraw.Draw(img)
 
-        # 헤더
         _draw_header(draw, script, fonts)
 
-        # 현재 프레임에서 표시할 메시지 결정
         visible_count = 0
         typing_msg_idx = -1
 
@@ -506,25 +537,20 @@ def render_frames(
                 typing_msg_idx = i
                 break
 
-        # 스크롤 오프셋 계산
         total_msg_h = sum(msg_heights[:visible_count])
         available_h = CHAT_AREA_BOTTOM - CHAT_AREA_TOP
-
-        # 타이핑 인디케이터 높이도 고려
         extra_h = 80 if typing_msg_idx >= 0 else 0
 
         scroll_offset = 0
         if total_msg_h + extra_h > available_h:
             scroll_offset = total_msg_h + extra_h - available_h
 
-        # 메시지 그리기
         y = CHAT_AREA_TOP - scroll_offset
         for i in range(visible_count):
-            if y + msg_heights[i] > CHAT_AREA_TOP - 20:  # 화면에 보이는 것만
+            if y + msg_heights[i] > CHAT_AREA_TOP - 20:
                 _draw_bubble(draw, script.messages[i], max(y, CHAT_AREA_TOP), fonts)
             y += msg_heights[i]
 
-        # 타이핑 인디케이터
         if typing_msg_idx >= 0:
             next_msg = script.messages[typing_msg_idx]
             if next_msg.side == "left":
@@ -532,19 +558,102 @@ def render_frames(
                 if ty < CHAT_AREA_BOTTOM - 60:
                     _draw_typing_indicator(draw, ty, next_msg.sender, fonts, f_idx)
 
-        # 하단 결과
         show_result = f_idx >= result_frame
         _draw_footer(draw, script, fonts, show_result)
 
-        # 헤더 위에 그라데이션 오버레이 (스크롤 시 메시지가 헤더 뒤로 가리기)
         for gy in range(HEADER_HEIGHT, HEADER_HEIGHT + 30):
-            alpha = 1.0 - (gy - HEADER_HEIGHT) / 30.0
-            overlay_color = tuple(
-                int(BG_COLOR[c] * alpha + BG_COLOR[c] * (1 - alpha))
-                for c in range(3)
-            )
             draw.line([(0, gy), (SHORTS_WIDTH, gy)], fill=BG_COLOR, width=1)
 
-        frames.append(img)
+        if enable_effects:
+            if hook_appear <= f_idx < hook_end:
+                progress = (f_idx - hook_appear) / max(hook_end - hook_appear, 1)
+                zoom = 1.0 + 0.06 * math.sin(progress * math.pi)
+                img = _apply_zoom(img, zoom)
 
-    return frames
+            if result_frame <= f_idx < result_shake_end:
+                progress = (f_idx - result_frame) / max(result_shake_end - result_frame, 1)
+                intensity = int(8 * (1.0 - progress))
+                img = _apply_shake(img, intensity, f_idx)
+
+        yield img
+
+
+def render_frames(
+    script: ChatScript,
+    fps: int = SHORTS_FPS,
+    msg_appear_sec: float = 1.5,
+    typing_sec: float = 0.8,
+    result_delay_sec: float = 1.0,
+    hold_end_sec: float = 3.0,
+    msg_durations: list[float] | None = None,
+    enable_effects: bool = True,
+) -> list[Image.Image]:
+    """채팅 대본을 프레임 시퀀스로 렌더링한다 (리스트 반환).
+
+    Note: 메모리 효율이 필요하면 render_frames_to_dir()을 사용하라.
+    """
+    return list(render_frames_iter(
+        script, fps, msg_appear_sec, typing_sec,
+        result_delay_sec, hold_end_sec, msg_durations, enable_effects,
+    ))
+
+
+def render_frames_iter(
+    script: ChatScript,
+    fps: int = SHORTS_FPS,
+    msg_appear_sec: float = 1.5,
+    typing_sec: float = 0.8,
+    result_delay_sec: float = 1.0,
+    hold_end_sec: float = 3.0,
+    msg_durations: list[float] | None = None,
+    enable_effects: bool = True,
+):
+    """채팅 대본을 프레임 제너레이터로 렌더링한다 (메모리 절약)."""
+    fonts = _get_fonts()
+    num_msgs = len(script.messages)
+
+    if msg_durations:
+        timeline, result_frame, total_frames = build_timeline(
+            script, fps, msg_durations, typing_sec, result_delay_sec, hold_end_sec
+        )
+    else:
+        timeline, result_frame, total_frames = build_timeline(
+            script, fps, [msg_appear_sec] * num_msgs, typing_sec,
+            result_delay_sec, hold_end_sec, min_display_sec=msg_appear_sec,
+        )
+
+    msg_heights = []
+    for msg in script.messages:
+        h = _calc_bubble_height(
+            msg.text,
+            fonts["message"],
+            BUBBLE_MAX_W - BUBBLE_PAD_H * 2,
+        )
+        name_h = fonts["sender"].getbbox(msg.sender)[3] - fonts["sender"].getbbox(msg.sender)[1]
+        msg_heights.append(h + name_h + 8 + MSG_GAP)
+
+    yield from _iter_frames(
+        script, fonts, timeline, msg_heights,
+        result_frame, total_frames, fps, enable_effects,
+    )
+
+
+def render_frames_to_dir(
+    script: ChatScript,
+    output_dir: Path,
+    fps: int = SHORTS_FPS,
+    msg_durations: list[float] | None = None,
+    enable_effects: bool = True,
+) -> int:
+    """프레임을 디스크에 직접 저장한다 (메모리 효율).
+
+    Returns:
+        총 프레임 수
+    """
+    count = 0
+    for img in render_frames_iter(
+        script, fps=fps, msg_durations=msg_durations, enable_effects=enable_effects,
+    ):
+        img.save(output_dir / f"frame_{count:06d}.png")
+        count += 1
+    return count
