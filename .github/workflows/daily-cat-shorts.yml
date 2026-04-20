@@ -31,8 +31,9 @@ jobs:
           PYTHONIOENCODING: utf-8
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
-          # youtube.py가 refresh된 token을 이 경로에 저장하면 다음 스텝이 secret 갱신
-          YOUTUBE_TOKEN_REFRESH_OUT: ${{ runner.temp }}/refreshed_token.json
+          # youtube.py가 refresh된 token을 이 경로에 저장. hashFiles()는 workspace 내부만
+          # 인식하므로 runner.temp 가 아닌 workspace 경로 사용.
+          YOUTUBE_TOKEN_REFRESH_OUT: ${{ github.workspace }}/refreshed_token.json
         run: |
           set +e
           python -m src.orchestrator.main --mode cat --batch 3
@@ -48,7 +49,7 @@ jobs:
           exit $code
 
       - name: Update YOUTUBE_TOKEN_JSON secret (if refreshed)
-        if: always() && hashFiles(format('{0}/refreshed_token.json', runner.temp)) != ''
+        if: always() && hashFiles('refreshed_token.json') != ''
         env:
           # 반드시 secrets:write 권한이 있는 PAT. 없으면 이 스텝 skip.
           GH_TOKEN: ${{ secrets.YOUTUBE_TOKEN_UPDATE_PAT }}
@@ -58,9 +59,13 @@ jobs:
             exit 0
           fi
           gh secret set YOUTUBE_TOKEN_JSON \
-            --body "$(cat ${{ runner.temp }}/refreshed_token.json)" \
+            --body "$(cat refreshed_token.json)" \
             --repo ${{ github.repository }}
           echo "secret rotated"
+
+      - name: Cleanup refreshed token file
+        if: always()
+        run: rm -f refreshed_token.json
 
       - name: Upload artifacts (backup)
         if: always()

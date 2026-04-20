@@ -2,7 +2,7 @@
 
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -23,23 +23,20 @@ CLIENT_SECRET_PATH = Path(__file__).parent.parent.parent / "config" / "client_se
 REFRESHED_TOKEN_OUT = os.getenv("YOUTUBE_TOKEN_REFRESH_OUT")
 
 
-def _warn_if_expiring_soon(creds: Credentials, threshold_days: int = 7):
-    """access token expiry가 임박하면 경고.
+def _check_stored_token_age(token_path: Path):
+    """파일에 저장된 토큰의 mtime 기반으로 refresh 토큰 노후화 경고.
 
-    refresh_token 자체는 expiry 필드로 알 수 없지만,
-    OAuth 'Testing' 모드에서는 refresh 토큰이 7일 단위로 만료되므로
-    최근에 갱신되지 않았다면 위험 신호로 간주한다.
+    OAuth 'Testing' 모드에서는 refresh 토큰이 ~7일 미사용 시 만료된다.
+    access_token의 expiry는 항상 1시간이라 신호가 안 되므로 파일 수정시간 사용.
+    로컬 환경에서만 의미 있음 (CI는 env var에서 로드).
     """
-    exp = creds.expiry
-    if exp is None:
+    if not token_path.exists():
         return
-    # google-auth 2.x의 creds.expiry는 naive UTC datetime
-    now = datetime.utcnow()
-    delta = exp - now
-    if delta < timedelta(days=threshold_days):
+    age_days = (datetime.utcnow().timestamp() - token_path.stat().st_mtime) / 86400
+    if age_days > 5:
         print(
-            f"[youtube] WARN: token expires at {exp.isoformat()}Z "
-            f"(in {delta}). refresh 실패 시 재인증 필요."
+            f"[youtube] WARN: token file last refreshed {age_days:.1f} days ago. "
+            "OAuth Testing 모드면 7일 후 만료됨 — 곧 재인증 필요할 수 있음."
         )
 
 
@@ -87,7 +84,7 @@ def get_youtube_service():
             creds = flow.run_local_server(port=0)
             TOKEN_PATH.write_text(creds.to_json())
 
-    _warn_if_expiring_soon(creds)
+    _check_stored_token_age(TOKEN_PATH)
     return build("youtube", "v3", credentials=creds)
 
 
