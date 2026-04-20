@@ -25,17 +25,50 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Generate and upload 3 cat shorts
+        id: generate
         env:
           CI: true
           PYTHONIOENCODING: utf-8
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
-        run: python -m src.orchestrator.main --mode cat --batch 3
+          # youtube.py가 refresh된 token을 이 경로에 저장하면 다음 스텝이 secret 갱신
+          YOUTUBE_TOKEN_REFRESH_OUT: ${{ runner.temp }}/refreshed_token.json
+        run: |
+          set +e
+          python -m src.orchestrator.main --mode cat --batch 3
+          code=$?
+          # exit 0: 전체 성공, 1: 부분 성공(이미 일부 업로드됨 - 재시도 금지),
+          # 2: 전체 실패, 그 외: 예외. 전체 실패만 1회 재시도.
+          if [ $code -eq 2 ]; then
+            echo "total failure (exit 2) — 60s 후 1회 재시도"
+            sleep 60
+            python -m src.orchestrator.main --mode cat --batch 3
+            code=$?
+          fi
+          exit $code
+
+      - name: Update YOUTUBE_TOKEN_JSON secret (if refreshed)
+        if: always() && hashFiles(format('{0}/refreshed_token.json', runner.temp)) != ''
+        env:
+          # 반드시 secrets:write 권한이 있는 PAT. 없으면 이 스텝 skip.
+          GH_TOKEN: ${{ secrets.YOUTUBE_TOKEN_UPDATE_PAT }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "YOUTUBE_TOKEN_UPDATE_PAT not set - skipping secret rotation"
+            exit 0
+          fi
+          gh secret set YOUTUBE_TOKEN_JSON \
+            --body "$(cat ${{ runner.temp }}/refreshed_token.json)" \
+            --repo ${{ github.repository }}
+          echo "secret rotated"
 
       - name: Upload artifacts (backup)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cat-shorts-${{ github.run_number }}
-          path: output/final/*.mp4
+          path: |
+            output/final/*.mp4
+            output/ai_cats/**/*.png
           retention-days: 7
+          if-no-files-found: warn

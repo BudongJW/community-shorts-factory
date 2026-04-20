@@ -1,13 +1,17 @@
 """YouTube Data API v3를 통한 영상 업로드."""
 
+import json
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
+from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
 load_dotenv()
@@ -15,6 +19,28 @@ load_dotenv()
 SCOPES = ["https://www.googleapis.com/auth/youtube"]
 TOKEN_PATH = Path(__file__).parent.parent.parent / "config" / "youtube_token.json"
 CLIENT_SECRET_PATH = Path(__file__).parent.parent.parent / "config" / "client_secret.json"
+# CI에서 refresh된 토큰을 여기에 쓰면 workflow가 이 파일을 읽어 secret을 갱신함
+REFRESHED_TOKEN_OUT = os.getenv("YOUTUBE_TOKEN_REFRESH_OUT")
+
+
+def _warn_if_expiring_soon(creds: Credentials, threshold_days: int = 7):
+    """access token expiry가 임박하면 경고.
+
+    refresh_token 자체는 expiry 필드로 알 수 없지만,
+    OAuth 'Testing' 모드에서는 refresh 토큰이 7일 단위로 만료되므로
+    최근에 갱신되지 않았다면 위험 신호로 간주한다.
+    """
+    exp = creds.expiry
+    if exp is None:
+        return
+    # google-auth 2.x의 creds.expiry는 naive UTC datetime
+    now = datetime.utcnow()
+    delta = exp - now
+    if delta < timedelta(days=threshold_days):
+        print(
+            f"[youtube] WARN: token expires at {exp.isoformat()}Z "
+            f"(in {delta}). refresh 실패 시 재인증 필요."
+        )
 
 
 def get_youtube_service():
@@ -26,25 +52,32 @@ def get_youtube_service():
     3. OAuth 브라우저 플로우 (최초 인증용)
     """
     creds = None
-
-    # 1) 환경변수에서 토큰 로드 (CI/CD용)
     token_json = os.getenv("YOUTUBE_TOKEN_JSON")
+
     if token_json:
-        import json
         creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
 
-    # 2) 파일에서 토큰 로드 (로컬용)
     if not creds and TOKEN_PATH.exists():
         creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            # 갱신된 토큰 저장 (로컬 환경에서만)
+            try:
+                creds.refresh(Request())
+            except RefreshError as e:
+                raise RuntimeError(
+                    f"YouTube OAuth refresh 실패: {e}. "
+                    "로컬에서 scripts/youtube_auth.py 재인증 후 "
+                    "`gh secret set YOUTUBE_TOKEN_JSON --body \"$(cat config/youtube_token.json)\"` 실행."
+                ) from e
+            # 갱신된 토큰 저장 (로컬 파일 + CI용 drop 위치)
+            refreshed = creds.to_json()
             if not token_json:
-                TOKEN_PATH.write_text(creds.to_json())
+                TOKEN_PATH.write_text(refreshed)
+            if REFRESHED_TOKEN_OUT:
+                Path(REFRESHED_TOKEN_OUT).write_text(refreshed)
+                print(f"[youtube] refreshed token dumped to {REFRESHED_TOKEN_OUT}")
         else:
-            # CI 환경에서는 브라우저 플로우 불가
             if os.getenv("CI"):
                 raise RuntimeError(
                     "YouTube 토큰이 만료되었거나 없습니다. "
@@ -54,6 +87,7 @@ def get_youtube_service():
             creds = flow.run_local_server(port=0)
             TOKEN_PATH.write_text(creds.to_json())
 
+    _warn_if_expiring_soon(creds)
     return build("youtube", "v3", credentials=creds)
 
 
@@ -94,7 +128,14 @@ def upload(
     media = MediaFileUpload(str(video_path), mimetype="video/mp4", resumable=True)
     request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
 
-    response = request.execute()
+    try:
+        response = request.execute()
+    except HttpError as e:
+        # e.error_details / e.reason 은 API 버전마다 다르므로 status + content 로그
+        status = getattr(e.resp, "status", "?")
+        content = e.content.decode("utf-8", errors="replace") if e.content else ""
+        print(f"[youtube] upload HttpError status={status}: {content[:500]}")
+        raise
     video_id = response["id"]
     print(f"Upload complete: https://www.youtube.com/shorts/{video_id}")
     return video_id

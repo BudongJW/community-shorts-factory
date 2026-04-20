@@ -43,29 +43,36 @@ CAT_QUERIES = [
 
 # 이미 사용한 영상 ID를 추적하여 중복 방지
 HISTORY_PATH = Path(__file__).parent.parent.parent / "output" / "cat_video_history.json"
+# 슬라이딩 윈도우 크기 — 이 개수만큼 최근 ID만 유지 (Pexels 풀 고갈 방지)
+HISTORY_MAX = 500
+
+
+def _load_history_list() -> list[str]:
+    """사용 순서가 보존된 영상 ID 리스트."""
+    if HISTORY_PATH.exists():
+        data = json.loads(HISTORY_PATH.read_text(encoding="utf-8"))
+        # 과거 포맷(set→list 변환)과 호환. 순서 없으면 그대로 사용.
+        return list(data)
+    return []
 
 
 def _load_history() -> set[str]:
-    """사용한 영상 ID 히스토리를 로드한다."""
-    if HISTORY_PATH.exists():
-        data = json.loads(HISTORY_PATH.read_text(encoding="utf-8"))
-        return set(data)
-    return set()
-
-
-def _save_history(ids: set[str]):
-    """사용한 영상 ID를 저장한다."""
-    HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    HISTORY_PATH.write_text(
-        json.dumps(list(ids), ensure_ascii=False), encoding="utf-8"
-    )
+    return set(_load_history_list())
 
 
 def _record_used(video_id: str):
-    """영상 사용 기록을 추가한다."""
-    history = _load_history()
-    history.add(video_id)
-    _save_history(history)
+    """영상 사용 기록을 추가한다. 슬라이딩 윈도우 적용."""
+    ids = _load_history_list()
+    # 중복 제거 후 맨 뒤에 추가 (최근성 유지)
+    ids = [i for i in ids if i != video_id]
+    ids.append(video_id)
+    # 최근 HISTORY_MAX개만 유지
+    if len(ids) > HISTORY_MAX:
+        ids = ids[-HISTORY_MAX:]
+    HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    HISTORY_PATH.write_text(
+        json.dumps(ids, ensure_ascii=False), encoding="utf-8"
+    )
 
 
 def search_pexels(query: str, per_page: int = 15) -> list[dict]:

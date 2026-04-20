@@ -141,26 +141,37 @@ def generate_ai_cat_images(
         log.info(f"  [{i+1}/{len(prompts)}] generating...")
 
         encoded = requests.utils.quote(prompt)
-        # seed를 다르게 해서 매번 다른 이미지 생성
-        seed = random.randint(1, 999999)
-        url = (
-            f"https://image.pollinations.ai/prompt/{encoded}"
-            f"?width=1080&height=1920&nologo=true&seed={seed}"
-        )
 
-        try:
-            resp = requests.get(url, timeout=90)
-            if resp.status_code == 200 and len(resp.content) > 10000:
-                path = output_dir / f"scene_{i:02d}.png"
-                path.write_bytes(resp.content)
-                generated.append(path)
-                log.info(f"  -> {path.name} ({len(resp.content) // 1024}KB)")
-            else:
-                log.warning(f"  failed: status={resp.status_code}")
-        except Exception as e:
-            log.warning(f"  failed: {e}")
+        path = None
+        for attempt in range(3):
+            # 매 시도마다 seed 변경 → 동일 프롬프트 캐시된 실패 응답 회피
+            seed = random.randint(1, 999999)
+            url = (
+                f"https://image.pollinations.ai/prompt/{encoded}"
+                f"?width=1080&height=1920&nologo=true&seed={seed}"
+            )
+            try:
+                resp = requests.get(url, timeout=90)
+                if resp.status_code == 200 and len(resp.content) > 10000:
+                    path = output_dir / f"scene_{i:02d}.png"
+                    path.write_bytes(resp.content)
+                    break
+                log.warning(
+                    f"  attempt {attempt+1}/3 failed: "
+                    f"status={resp.status_code} bytes={len(resp.content)}"
+                )
+            except Exception as e:
+                log.warning(f"  attempt {attempt+1}/3 failed: {e}")
+            # 2s → 4s → 8s backoff
+            time.sleep(2 ** (attempt + 1))
 
-        # API 레이트 리밋 방지
+        if path:
+            generated.append(path)
+            log.info(f"  -> {path.name} ({path.stat().st_size // 1024}KB)")
+        else:
+            log.error(f"  scene {i} 3회 재시도 모두 실패")
+
+        # 다음 장면 사이 rate limit 완화
         if i < len(prompts) - 1:
             time.sleep(2)
 

@@ -416,7 +416,7 @@ def pipeline(
     # ── cat 모드: 고양이 영상 (실사 + AI 애니메이션 믹스) ──
     if mode == "cat":
         results = []
-        # batch 3 기준: 실사 2개 + 애니메이션 1개
+        failures = []
         anime_idx = batch - 1  # 마지막 1개를 애니메이션으로
         for i in range(batch):
             if batch > 1:
@@ -427,16 +427,24 @@ def pipeline(
                 log.info(f"{'--' * 20}")
             else:
                 is_anime = False
+                label = "real"
 
             run_id = datetime.now().strftime("%Y%m%d_%H%M%S") + (f"_{i}" if batch > 1 else "")
 
-            if is_anime:
-                result = pipeline_anime_cat_single(skip_upload, run_id)
-            else:
-                result = pipeline_cat_single(skip_upload, run_id)
+            try:
+                if is_anime:
+                    result = pipeline_anime_cat_single(skip_upload, run_id)
+                else:
+                    result = pipeline_cat_single(skip_upload, run_id)
+            except Exception as e:
+                log.exception(f"  영상 {i + 1}/{batch} ({label}) 실패: {e}")
+                failures.append((i, label, str(e)))
+                continue
 
             if result:
                 results.append(result)
+            else:
+                failures.append((i, label, "pipeline returned None"))
 
         log.info("")
         log.info("=" * 50)
@@ -444,7 +452,11 @@ def pipeline(
         log.info("=" * 50)
         for r in results:
             log.info(f"  [{r['run_id']}] {r['title']} -> {r['final_path']}")
-        return
+        if failures:
+            log.error(f"  실패 {len(failures)}편:")
+            for idx, label, err in failures:
+                log.error(f"    #{idx + 1} ({label}): {err}")
+        return {"success": len(results), "failures": len(failures), "batch": batch}
 
     # ── chat 모드: JSON 직접 지정 시 수집 건너뜀 ──
     if mode == "chat" and json_path:
@@ -557,7 +569,7 @@ def main():
                         help="chat 모드에서 직접 JSON 대본 경로 지정")
     args = parser.parse_args()
 
-    pipeline(
+    result = pipeline(
         num_posts=args.posts,
         llm_provider=args.provider,
         skip_upload=args.skip_upload,
@@ -566,6 +578,12 @@ def main():
         mode=args.mode,
         json_path=args.json,
     )
+
+    # cat 모드의 경우 부분 실패를 non-zero exit code로 신호
+    if isinstance(result, dict) and result.get("failures", 0) > 0:
+        import sys
+        # 전부 실패면 2, 일부 실패면 1
+        sys.exit(2 if result["success"] == 0 else 1)
 
 
 if __name__ == "__main__":
