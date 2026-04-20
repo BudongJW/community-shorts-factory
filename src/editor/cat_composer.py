@@ -11,6 +11,7 @@ import imageio_ffmpeg
 
 from config.settings import SHORTS_WIDTH, SHORTS_HEIGHT, SHORTS_FPS, FINAL_DIR
 from src.audio.lofi_music import pick_random_track
+from src.editor.hook_overlay import ffmpeg_drawtext_filter, pick_hook
 from src.utils.logger import setup_logger
 
 log = setup_logger("cat_composer")
@@ -55,6 +56,7 @@ def compose_cat_short(
     output_name: str = "cat_short",
     bgm_volume: float = 0.7,
     caption: str = "",
+    hook: str | None = None,
 ) -> Path:
     """고양이 영상을 Shorts 포맷으로 합성한다.
 
@@ -63,6 +65,7 @@ def compose_cat_short(
         output_name: 출력 파일명
         bgm_volume: BGM 볼륨 (0.0~1.0)
         caption: 상단/하단 캡션 텍스트 (옵션)
+        hook: 첫 1초 훅 오버레이 텍스트. None이면 랜덤 선택, ""면 비활성.
 
     Returns:
         최종 영상 파일 경로
@@ -101,6 +104,13 @@ def compose_cat_short(
             f":borderw=3:bordercolor=black"
             f":x=(w-text_w)/2:y=h-120"
         )
+
+    # 첫 1초 훅 오버레이 (hook="" 이면 비활성화)
+    if hook is None:
+        hook = pick_hook()
+    if hook:
+        log.info(f"  hook: {hook}")
+        vf_parts.append(ffmpeg_drawtext_filter(hook, video_h=SHORTS_HEIGHT))
 
     vf = ",".join(vf_parts)
 

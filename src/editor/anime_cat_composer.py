@@ -15,6 +15,7 @@ import imageio_ffmpeg
 
 from config.settings import SHORTS_WIDTH, SHORTS_HEIGHT, SHORTS_FPS, FINAL_DIR
 from src.audio.lofi_music import pick_random_track
+from src.editor.hook_overlay import HOOK_DURATION, pick_hook, pil_draw_hook
 from src.utils.logger import setup_logger
 
 log = setup_logger("anime_cat_composer")
@@ -91,6 +92,7 @@ def compose_anime_cat(
     sec_per_image: float = 5.0,
     bgm_volume: float = 0.7,
     transition_frames: int = 8,
+    hook: str | None = None,
 ) -> Path:
     """AI 고양이 이미지 시퀀스를 영상으로 합성한다.
 
@@ -100,6 +102,7 @@ def compose_anime_cat(
         sec_per_image: 이미지당 표시 시간(초)
         bgm_volume: BGM 볼륨
         transition_frames: 장면 전환 페이드 프레임 수
+        hook: 첫 1초 훅 오버레이 텍스트. None이면 랜덤 선택, ""면 비활성.
 
     Returns:
         최종 영상 파일 경로
@@ -126,6 +129,13 @@ def compose_anime_cat(
     bgm_path = pick_random_track()
     if bgm_path:
         log.info(f"  bgm: {bgm_path.name}")
+
+    # 훅 오버레이 (첫 HOOK_DURATION 초만 표시)
+    if hook is None:
+        hook = pick_hook()
+    if hook:
+        log.info(f"  hook: {hook}")
+    hook_end_frame = int(HOOK_DURATION * fps)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
@@ -160,6 +170,11 @@ def compose_anime_cat(
                     alpha = (frames_per_image - f) / transition_frames
                     dark = Image.new("RGB", frame.size, (0, 0, 0))
                     frame = Image.blend(dark, frame, alpha)
+
+                # 첫 HOOK_DURATION 초 훅 오버레이
+                if hook and frame_idx < hook_end_frame:
+                    progress = frame_idx / hook_end_frame
+                    frame = pil_draw_hook(frame, hook, progress)
 
                 frame.save(tmpdir_path / f"frame_{frame_idx:06d}.png")
                 frame_idx += 1

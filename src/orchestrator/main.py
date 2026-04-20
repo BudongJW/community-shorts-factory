@@ -395,6 +395,7 @@ def pipeline(
     batch: int = 1,
     mode: str = "narration",
     json_path: str | None = None,
+    cat_variant: str = "auto",
 ):
     """전체 파이프라인.
 
@@ -406,6 +407,7 @@ def pipeline(
         batch: 생성할 영상 수
         mode: "narration" (기존) 또는 "chat" (채팅 썰)
         json_path: chat 모드에서 직접 JSON 대본 경로 지정
+        cat_variant: "auto"(기존, 마지막만 anime) / "real" / "anime" — cat 모드에서 영상 종류 강제
     """
     log.info("")
     log.info("=" * 50)
@@ -417,17 +419,21 @@ def pipeline(
     if mode == "cat":
         results = []
         failures = []
-        anime_idx = batch - 1  # 마지막 1개를 애니메이션으로
+        # cat_variant: auto(기존 로직) / real(전부 실사) / anime(전부 AI)
+        anime_idx = batch - 1  # auto일 때 마지막 1개만 애니메이션
         for i in range(batch):
+            if cat_variant == "real":
+                is_anime = False
+            elif cat_variant == "anime":
+                is_anime = True
+            else:  # auto
+                is_anime = (i == anime_idx) and batch > 1
+
+            label = "anime" if is_anime else "real"
             if batch > 1:
-                is_anime = (i == anime_idx)
-                label = "anime" if is_anime else "real"
                 log.info(f"\n{'--' * 20}")
                 log.info(f"  영상 {i + 1}/{batch} ({label})")
                 log.info(f"{'--' * 20}")
-            else:
-                is_anime = False
-                label = "real"
 
             run_id = datetime.now().strftime("%Y%m%d_%H%M%S") + (f"_{i}" if batch > 1 else "")
 
@@ -567,6 +573,8 @@ def main():
                         help="영상 모드: narration(나레이션) / chat(채팅 썰) / cat(고양이)")
     parser.add_argument("--json", type=str, default=None,
                         help="chat 모드에서 직접 JSON 대본 경로 지정")
+    parser.add_argument("--cat-variant", choices=["auto", "real", "anime"], default="auto",
+                        help="cat 모드 영상 종류 강제 (auto=마지막만 anime)")
     args = parser.parse_args()
 
     result = pipeline(
@@ -577,6 +585,7 @@ def main():
         batch=args.batch,
         mode=args.mode,
         json_path=args.json,
+        cat_variant=args.cat_variant,
     )
 
     # cat 모드의 경우 부분 실패를 non-zero exit code로 신호
