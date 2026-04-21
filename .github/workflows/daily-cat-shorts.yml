@@ -31,6 +31,15 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
+      - name: Install ffmpeg (drawtext 필터용 full build)
+        # imageio_ffmpeg의 Linux 번들은 drawtext 미포함 최소 빌드라
+        # 훅 오버레이 합성 시 "No such filter" 오류 발생. 시스템 ffmpeg 설치 필요.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
+          ffmpeg -version | head -1
+          ffmpeg -filters 2>/dev/null | grep -w drawtext || { echo "drawtext still missing!"; exit 1; }
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
