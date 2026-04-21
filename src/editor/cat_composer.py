@@ -4,6 +4,7 @@
 lofi jazz BGM을 얹어 YouTube Shorts를 생성한다.
 """
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -16,7 +17,9 @@ from src.utils.logger import setup_logger
 
 log = setup_logger("cat_composer")
 
-FFMPEG_BIN = imageio_ffmpeg.get_ffmpeg_exe()
+# 시스템 ffmpeg 우선. imageio_ffmpeg의 Linux 번들은 drawtext 필터 미포함 최소 빌드라
+# 훅 오버레이가 CI에서 실패한다. ubuntu-latest는 ffmpeg 사전 설치되어 있음.
+FFMPEG_BIN = shutil.which("ffmpeg") or imageio_ffmpeg.get_ffmpeg_exe()
 MAX_DURATION = 55  # Shorts 60초 제한에 여유
 
 

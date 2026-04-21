@@ -4,6 +4,7 @@ AI 이미지 시퀀스에 Ken Burns 효과(줌/팬)를 적용하고
 lofi jazz BGM을 얹어 Shorts 영상을 생성한다.
 """
 
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -20,7 +21,8 @@ from src.utils.logger import setup_logger
 
 log = setup_logger("anime_cat_composer")
 
-FFMPEG_BIN = imageio_ffmpeg.get_ffmpeg_exe()
+# anime 경로는 훅을 PIL로 pre-render하므로 drawtext 불필요. 통일성을 위해 동일 규칙 적용.
+FFMPEG_BIN = shutil.which("ffmpeg") or imageio_ffmpeg.get_ffmpeg_exe()
 
 
 def _ken_burns_frame(
