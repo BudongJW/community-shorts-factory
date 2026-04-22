@@ -23,7 +23,7 @@ HOOKS = [
     "WHAT",
     "NOT AGAIN",
     "SEND HELP",
-    "I'M DONE",
+    "IM DONE",
     "WHY",
     "EVERY TIME",
 ]
@@ -68,10 +68,12 @@ def ffmpeg_drawtext_filter(hook: str, video_h: int = 1920) -> str:
     첫 HOOK_DURATION 초 동안 표시하고 마지막 HOOK_FADE 초에 알파 fade out.
     drawtext의 특수문자는 백슬래시 이스케이프 필요.
     """
-    # drawtext 안전 이스케이프: single quote, backslash, colon, percent
+    # drawtext 안전 이스케이프: single quote는 필터 파서가 close-reopen 패턴만 인정.
+    # `\'`는 내부 처리되지 않아 문자열이 쪼개져 "filter not found" 발생.
+    # HOOKS 풀에는 애초에 apostrophe를 넣지 않지만 외부 입력 대비용 방어책.
     safe = (
         hook.replace("\\", "\\\\")
-        .replace("'", "\\'")
+        .replace("'", "'\\''")
         .replace(":", "\\:")
         .replace("%", "\\%")
     )
