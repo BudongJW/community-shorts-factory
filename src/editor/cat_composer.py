@@ -30,6 +30,57 @@ FFMPEG_BIN = shutil.which("ffmpeg") or imageio_ffmpeg.get_ffmpeg_exe()
 MAX_DURATION = 55  # Shorts 60초 제한에 여유
 
 
+def _find_best_start_offset(video_path: Path, max_duration: float) -> float:
+    """첫 ~2초 내에서 정보량 가장 높은 프레임의 오프셋을 찾는다.
+
+    썸네일로 자동 노출되는 첫 프레임이 블랙/로고/단색이면 CTR 손해.
+    4개 후보 프레임의 brightness stddev를 비교해 가장 높은 지점 선택.
+    max_duration을 넘지 않는 범위로만 이동.
+    """
+    import tempfile
+    from PIL import Image
+
+    # 원본 길이가 너무 짧으면 offset 생략
+    if max_duration < 3:
+        return 0.0
+
+    candidates = [0.0, 0.5, 1.0, 1.5]
+    candidates = [c for c in candidates if c < max_duration - 0.5]
+    if len(candidates) < 2:
+        return 0.0
+
+    best_offset = 0.0
+    best_score = -1.0
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp = Path(tmpdir)
+        for off in candidates:
+            out = tmp / f"frame_{off:.1f}.jpg"
+            cmd = [
+                FFMPEG_BIN, "-y", "-ss", str(off), "-i", str(video_path),
+                "-frames:v", "1", "-q:v", "6", "-vf", "scale=160:-1",
+                str(out),
+            ]
+            result = subprocess.run(cmd, capture_output=True)
+            if result.returncode != 0 or not out.exists():
+                continue
+            try:
+                img = Image.open(out).convert("L")
+                pixels = list(img.getdata())
+                n = len(pixels)
+                if n == 0:
+                    continue
+                mean = sum(pixels) / n
+                # 분산 → 정보량 프록시. 블랙 프레임은 분산 ~0.
+                var = sum((p - mean) ** 2 for p in pixels) / n
+                if var > best_score:
+                    best_score = var
+                    best_offset = off
+            except Exception:
+                continue
+
+    return best_offset
+
+
 def _get_video_info(video_path: Path) -> dict:
     """FFprobe로 영상 정보를 가져온다."""
     cmd = [
@@ -104,6 +155,14 @@ def compose_cat_short(
         duration = min(duration, target_duration)
         log.info(f"  target duration: {target_duration:.0f}s -> using {duration:.0f}s")
 
+    # 썸네일(= 첫 프레임) 정보량 최대화 위해 시작 오프셋 최적화.
+    # 오프셋만큼 duration 여유 확보를 위해 원본 길이와 체크.
+    start_offset = _find_best_start_offset(video_path, info["duration"])
+    if start_offset > 0 and info["duration"] - start_offset >= duration:
+        log.info(f"  start offset: {start_offset:.1f}s (best thumbnail frame)")
+    else:
+        start_offset = 0.0
+
     # 비디오 필터: 세로 크롭 + 스케일
     # 가로 영상이면 중앙 크롭, 세로 영상이면 스케일만
     vf_parts = [
@@ -145,6 +204,11 @@ def compose_cat_short(
 
     # FFmpeg 명령 구성
     cmd = [FFMPEG_BIN, "-y"]
+
+    # -ss를 -i 앞에 두면 fast seek (키프레임 단위, 정확도↓ 속도↑).
+    # 썸네일 최적화 오프셋은 1.5초 이내 작은 값이라 정확도 차이 미미.
+    if start_offset > 0:
+        cmd += ["-ss", str(start_offset)]
 
     # 입력 1: 비디오
     cmd += ["-i", str(video_path)]

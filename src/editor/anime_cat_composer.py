@@ -126,6 +126,26 @@ def compose_anime_cat(
     if not image_paths:
         raise ValueError("이미지가 없습니다")
 
+    # 썸네일(= 첫 프레임) 최적화: 정보량 가장 높은 이미지를 앞으로.
+    # 각 이미지의 채도+대비 추정으로 점수 계산. Pollinations가 가끔 밋밋한 결과 내므로
+    # 가장 임팩트 있는 것을 첫 장면으로 노출하여 CTR 확보.
+    def _img_score(p: Path) -> float:
+        try:
+            im = Image.open(p).convert("RGB").resize((80, 140))
+            arr = np.asarray(im, dtype=np.int32)
+            # 채널별 표준편차 합 — 단색/저대비는 낮음.
+            return float(arr.std(axis=(0, 1)).sum())
+        except Exception:
+            return 0.0
+
+    if len(image_paths) > 1:
+        scored = sorted(image_paths, key=_img_score, reverse=True)
+        if scored[0] != image_paths[0]:
+            log.info(f"  thumbnail swap: {image_paths[0].name} -> {scored[0].name}")
+            # 최고점을 맨 앞으로, 나머지는 원래 순서 유지.
+            rest = [p for p in image_paths if p != scored[0]]
+            image_paths = [scored[0]] + rest
+
     # target_duration 지정 시 sec_per_image 재계산 — 이미지 수 유지하며 장면 길이 조정.
     if target_duration is not None:
         # 이미지 최소 3초, 최대 7초 가드 (너무 짧으면 Ken Burns 효과가 의미 없고 길면 지루).
