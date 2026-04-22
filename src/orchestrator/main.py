@@ -269,6 +269,22 @@ TITLE_EMOJIS = ["😹", "🙀", "😻", "🐾", "✨", "🔥", "💀", "😭"]
 # 시리즈물 포맷은 알고리즘상 "같은 채널 반복 시청" 신호 강화 + 시청자가 다음 편 기대.
 SERIES_COUNTER_PATH = Path("output") / "series_counter.json"
 
+# 듀레이션 버킷 — 채널에 다양한 길이가 섞여야 알고리즘이 세그먼트 다양하게 추천.
+# 짧은 영상은 완주율, 긴 영상은 시청 시간 확보. 70% 짧은/30% 긴 비율이 리텐션 상 유리.
+DURATION_BUCKETS = [
+    ("short", 15, 25, 0.7),   # name, lo, hi, weight
+    ("medium", 26, 40, 0.3),
+]
+
+
+def _pick_target_duration() -> tuple[str, float]:
+    """(버킷 이름, 목표 초) 반환. 버킷 내 균등 랜덤."""
+    import random
+    weights = [b[3] for b in DURATION_BUCKETS]
+    bucket = random.choices(DURATION_BUCKETS, weights=weights, k=1)[0]
+    name, lo, hi, _ = bucket
+    return name, random.uniform(lo, hi)
+
 
 def _load_series_counters() -> dict:
     if SERIES_COUNTER_PATH.exists():
@@ -344,8 +360,9 @@ def pipeline_cat_single(
     clip = clips[0]
     log.info(f"  -> {clip.name}")
 
-    log.info("[cat 2/3] Lofi Jazz + 세로 크롭 합성 중...")
-    final_path = compose_cat_short(clip, output_name=run_id)
+    bucket_name, target_sec = _pick_target_duration()
+    log.info(f"[cat 2/3] Lofi Jazz + 세로 크롭 합성 중 (target: {bucket_name} {target_sec:.0f}s)...")
+    final_path = compose_cat_short(clip, output_name=run_id, target_duration=target_sec)
     log.info(f"  -> {final_path.name} ({final_path.stat().st_size // 1024}KB)")
 
     video_id = ""
@@ -391,8 +408,9 @@ def pipeline_anime_cat_single(
         return None
     log.info(f"  -> {len(images)}장 생성 완료")
 
-    log.info("[anime-cat 2/3] Ken Burns + Lofi Jazz 합성 중...")
-    final_path = compose_anime_cat(images, output_name=run_id)
+    bucket_name, target_sec = _pick_target_duration()
+    log.info(f"[anime-cat 2/3] Ken Burns + Lofi Jazz 합성 중 (target: {bucket_name} {target_sec:.0f}s)...")
+    final_path = compose_anime_cat(images, output_name=run_id, target_duration=target_sec)
     log.info(f"  -> {final_path.name} ({final_path.stat().st_size // 1024}KB)")
 
     video_id = ""

@@ -105,6 +105,7 @@ def compose_anime_cat(
     bgm_volume: float = 0.7,
     transition_frames: int = 8,
     hook: str | None = None,
+    target_duration: float | None = None,
 ) -> Path:
     """AI 고양이 이미지 시퀀스를 영상으로 합성한다.
 
@@ -124,6 +125,12 @@ def compose_anime_cat(
 
     if not image_paths:
         raise ValueError("이미지가 없습니다")
+
+    # target_duration 지정 시 sec_per_image 재계산 — 이미지 수 유지하며 장면 길이 조정.
+    if target_duration is not None:
+        # 이미지 최소 3초, 최대 7초 가드 (너무 짧으면 Ken Burns 효과가 의미 없고 길면 지루).
+        sec_per_image = max(3.0, min(7.0, target_duration / max(1, len(image_paths))))
+        log.info(f"  target {target_duration:.0f}s -> sec_per_image {sec_per_image:.1f}s")
 
     # 55초 제한
     max_images = int(55 / sec_per_image)

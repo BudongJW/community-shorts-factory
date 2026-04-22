@@ -67,6 +67,7 @@ def compose_cat_short(
     bgm_volume: float = 0.7,
     caption: str = "",
     hook: str | None = None,
+    target_duration: float | None = None,
 ) -> Path:
     """고양이 영상을 Shorts 포맷으로 합성한다.
 
@@ -76,6 +77,8 @@ def compose_cat_short(
         bgm_volume: BGM 볼륨 (0.0~1.0)
         caption: 상단/하단 캡션 텍스트 (옵션)
         hook: 첫 1초 훅 오버레이 텍스트. None이면 랜덤 선택, ""면 비활성.
+        target_duration: 목표 영상 길이(초). None이면 원본 길이(+55 cap) 사용.
+            원본보다 길면 원본 길이 유지 (영상 소스 부족).
 
     Returns:
         최종 영상 파일 경로
@@ -91,10 +94,15 @@ def compose_cat_short(
     if bgm_path:
         log.info(f"  bgm: {bgm_path.name}")
 
-    # 영상 길이 제한
+    # 영상 길이 결정
     duration = min(info["duration"], MAX_DURATION)
     if duration < 3:
         duration = MAX_DURATION  # 길이 파싱 실패 시 기본값
+    if target_duration is not None:
+        # 원본보다 target이 길면 원본 유지 — 클립을 늘릴 수 없음.
+        # target이 짧으면 앞부분부터 target만큼 사용.
+        duration = min(duration, target_duration)
+        log.info(f"  target duration: {target_duration:.0f}s -> using {duration:.0f}s")
 
     # 비디오 필터: 세로 크롭 + 스케일
     # 가로 영상이면 중앙 크롭, 세로 영상이면 스케일만
