@@ -12,7 +12,14 @@ import imageio_ffmpeg
 
 from config.settings import SHORTS_WIDTH, SHORTS_HEIGHT, SHORTS_FPS, FINAL_DIR
 from src.audio.lofi_music import pick_random_track
-from src.editor.hook_overlay import ffmpeg_drawtext_filter, pick_hook, pick_hook_position
+from src.editor.hook_overlay import (
+    ffmpeg_drawtext_filter,
+    ffmpeg_midcap_filter,
+    pick_hook,
+    pick_hook_position,
+    pick_midcap,
+    pick_midcap_time,
+)
 from src.utils.logger import setup_logger
 
 log = setup_logger("cat_composer")
@@ -115,6 +122,16 @@ def compose_cat_short(
         pos_name, y_ratio = pick_hook_position()
         log.info(f"  hook: {hook} @ {pos_name}")
         vf_parts.append(ffmpeg_drawtext_filter(hook, video_h=SHORTS_HEIGHT, y_ratio=y_ratio))
+
+    # 2차 훅(midcap) — 5~8초 구간 리텐션 방어.
+    # 훅 비활성화(hook="")면 midcap도 생략 — 전체 오버레이 off 용도 보존.
+    if hook and duration > 4:
+        midcap = pick_midcap()
+        midcap_start = pick_midcap_time(duration)
+        log.info(f"  midcap: {midcap} @ {midcap_start:.1f}s")
+        vf_parts.append(
+            ffmpeg_midcap_filter(midcap, midcap_start, video_h=SHORTS_HEIGHT)
+        )
 
     vf = ",".join(vf_parts)
 

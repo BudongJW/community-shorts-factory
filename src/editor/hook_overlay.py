@@ -31,6 +31,28 @@ HOOKS = [
 HOOK_DURATION = 1.2  # 초. 이 시간 지나면 페이드 아웃.
 HOOK_FADE = 0.3      # 페이드 아웃 길이(초)
 
+# 2차 훅(midcap) — 5~8초 사이 리텐션 방어용 반응 캡션.
+# YouTube 분석상 5-7초 구간이 주요 이탈점이라 이때 재자극 필요.
+MIDCAP_TEXTS = [
+    "WAIT WHAT",
+    "NAH",
+    "BRO NO",
+    "AGAIN??",
+    "THE AUDACITY",
+    "SEND TWEET",
+    "IM CRYING",
+    "NOT OK",
+    "RUN",
+    "SMH",
+    "GIRLIE NO",
+    "DID HE JUST",
+    "EXCUSE ME",
+    "CRIME",
+    "CHAOS",
+]
+MIDCAP_DURATION = 1.5  # 초. 훅보다 조금 길게 — 두 번째라 약간 더 읽을 시간 필요.
+MIDCAP_FADE = 0.3
+
 # 훅 위치 옵션. 동일 채널에서 매 영상 같은 위치면 포맷 단조로움.
 # ratio는 영상 높이 기준 y좌표 (0=최상단, 1=최하단).
 HOOK_POSITIONS = [
@@ -44,6 +66,25 @@ HOOK_POSITIONS = [
 def pick_hook() -> str:
     """랜덤 훅 문구 선택."""
     return random.choice(HOOKS)
+
+
+def pick_midcap() -> str:
+    """2차 훅 문구 선택 (5~8초 구간용)."""
+    return random.choice(MIDCAP_TEXTS)
+
+
+def pick_midcap_time(video_duration: float) -> float:
+    """2차 훅 시작 시각(초). 영상 길이에 따라 리텐션 곡선 이탈점 근처로 배치.
+
+    짧은 영상(≤15s)은 5초, 긴 영상(≥30s)은 8초가 주요 이탈점.
+    """
+    if video_duration < 10:
+        return 4.0  # 너무 짧으면 거의 의미 없지만 한 번 더 자극
+    if video_duration < 20:
+        return 5.5
+    if video_duration < 35:
+        return 7.0
+    return 8.5
 
 
 def pick_hook_position() -> tuple[str, float]:
@@ -110,6 +151,82 @@ def ffmpeg_drawtext_filter(hook: str, video_h: int = 1920, y_ratio: float = 0.18
         f":alpha='{alpha_expr}'"
         f":enable='between(t,0,{HOOK_DURATION})'"
     )
+
+
+def ffmpeg_midcap_filter(
+    midcap: str,
+    start_time: float,
+    video_h: int = 1920,
+    y_ratio: float = 0.75,
+) -> str:
+    """2차 훅 drawtext 필터. 첫 훅보다 작은 폰트, 하단 배치, start_time부터 표시."""
+    safe = (
+        midcap.replace("\\", "\\\\")
+        .replace("'", "'\\''")
+        .replace(":", "\\:")
+        .replace("%", "\\%")
+    )
+    font = find_bold_font().replace("\\", "/").replace(":", "\\:")
+    y = int(video_h * y_ratio)
+    end_time = start_time + MIDCAP_DURATION
+    fade_start_abs = end_time - MIDCAP_FADE
+    alpha_expr = (
+        f"if(lt(t,{fade_start_abs}),1,"
+        f"max(0,1-(t-{fade_start_abs})/{MIDCAP_FADE}))"
+    )
+    return (
+        f"drawtext=fontfile='{font}'"
+        f":text='{safe}'"
+        f":fontsize=90:fontcolor=yellow"
+        f":borderw=5:bordercolor=black"
+        f":x=(w-text_w)/2:y={y}"
+        f":alpha='{alpha_expr}'"
+        f":enable='between(t,{start_time},{end_time})'"
+    )
+
+
+def pil_draw_midcap(
+    pil_img,
+    midcap: str,
+    progress: float,
+    y_ratio: float = 0.75,
+):
+    """PIL 이미지에 2차 훅을 그린다. progress: 0~1 (MIDCAP_DURATION 구간 내)."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    if progress < 0 or progress >= 1.0:
+        return pil_img
+
+    fade_start = (MIDCAP_DURATION - MIDCAP_FADE) / MIDCAP_DURATION
+    if progress < fade_start:
+        alpha = 1.0
+    else:
+        alpha = max(0.0, 1.0 - (progress - fade_start) / (1.0 - fade_start))
+
+    if alpha <= 0:
+        return pil_img
+
+    overlay = Image.new("RGBA", pil_img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    try:
+        font = ImageFont.truetype(find_bold_font(), 90)
+    except OSError:
+        font = ImageFont.load_default()
+
+    bbox = draw.textbbox((0, 0), midcap, font=font)
+    tw = bbox[2] - bbox[0]
+    x = (pil_img.width - tw) // 2 - bbox[0]
+    y = int(pil_img.height * y_ratio)
+
+    a = int(alpha * 255)
+    for dx, dy in [(-3, 0), (3, 0), (0, -3), (0, 3), (-2, -2), (2, -2), (-2, 2), (2, 2)]:
+        draw.text((x + dx, y + dy), midcap, font=font, fill=(0, 0, 0, a))
+    draw.text((x, y), midcap, font=font, fill=(255, 230, 0, a))  # 노란색 — 1차 훅과 차별화
+
+    if pil_img.mode != "RGBA":
+        pil_img = pil_img.convert("RGBA")
+    composited = Image.alpha_composite(pil_img, overlay)
+    return composited.convert("RGB")
 
 
 def pil_draw_hook(pil_img, hook: str, progress: float, y_ratio: float = 0.18):

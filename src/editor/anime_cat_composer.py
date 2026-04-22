@@ -19,9 +19,13 @@ from config.settings import SHORTS_WIDTH, SHORTS_HEIGHT, SHORTS_FPS, FINAL_DIR
 from src.audio.lofi_music import pick_random_track
 from src.editor.hook_overlay import (
     HOOK_DURATION,
+    MIDCAP_DURATION,
     pick_hook,
     pick_hook_position,
+    pick_midcap,
+    pick_midcap_time,
     pil_draw_hook,
+    pil_draw_midcap,
 )
 from src.utils.logger import setup_logger
 
@@ -153,6 +157,17 @@ def compose_anime_cat(
         log.info(f"  hook: {hook} @ {pos_name}")
     hook_end_frame = int(HOOK_DURATION * fps)
 
+    # 2차 훅 (midcap) — 5~8초 구간 재자극. hook="" 이면 함께 off.
+    midcap = ""
+    midcap_start_frame = 0
+    midcap_end_frame = 0
+    if hook and total_sec > 4:
+        midcap = pick_midcap()
+        midcap_start = pick_midcap_time(total_sec)
+        midcap_start_frame = int(midcap_start * fps)
+        midcap_end_frame = midcap_start_frame + int(MIDCAP_DURATION * fps)
+        log.info(f"  midcap: {midcap} @ {midcap_start:.1f}s")
+
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
         frame_idx = 0
@@ -191,6 +206,12 @@ def compose_anime_cat(
                 if hook and frame_idx < hook_end_frame:
                     progress = frame_idx / hook_end_frame
                     frame = pil_draw_hook(frame, hook, progress, y_ratio=hook_y_ratio)
+
+                # 2차 훅 오버레이 (midcap)
+                if midcap and midcap_start_frame <= frame_idx < midcap_end_frame:
+                    span = midcap_end_frame - midcap_start_frame
+                    progress = (frame_idx - midcap_start_frame) / span
+                    frame = pil_draw_midcap(frame, midcap, progress, y_ratio=0.75)
 
                 frame.save(tmpdir_path / f"frame_{frame_idx:06d}.png")
                 frame_idx += 1
