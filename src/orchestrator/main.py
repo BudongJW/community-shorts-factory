@@ -204,6 +204,23 @@ REAL_CAT_TITLES = [
     "When your cat judges you",
     "Cat mode: activated",
     "The duality of cats",
+    # 확장: retention hook형 제목
+    "Wait until you see this cat",
+    "I can't stop watching this",
+    "This cat is something else",
+    "My cat's villain arc",
+    "Cats are built different",
+    "Tell me this isn't you",
+    "Nobody:\nMy cat:",
+    "How is this legal",
+    "Cats when you're not looking",
+    "Send this to a cat person",
+    "Cats will never disappoint",
+    "Rate this cat out of 10",
+    "Which one is you",
+    "This cat said nope",
+    "Cat therapy session",
+    "Why do cats do this",
 ]
 
 ANIME_CAT_TITLES = [
@@ -217,7 +234,63 @@ ANIME_CAT_TITLES = [
     "If cats had superpowers",
     "Cat fantasy adventure",
     "Legendary cat warriors",
+    # 확장
+    "Anime cats go hard",
+    "Main character cat energy",
+    "This cat could beat Goku",
+    "POV: You're a cat in an anime",
+    "Isekai but you're a cat",
+    "Cat's final form revealed",
+    "AI imagined anime cats",
+    "The chosen cat",
+    "Cat cinematic moments",
+    "Cats in the multiverse",
 ]
+
+# 해시태그 풀: 매번 10개 랜덤 선택 (태그 다양화로 알고리즘 노출 확대)
+REAL_CAT_HASHTAGS = [
+    "Shorts", "shorts", "cat", "cats", "catsoftiktok", "catsofyoutube",
+    "funny", "funnycats", "funnyanimals", "kitten", "kittens", "cute",
+    "cutecats", "cuteanimals", "meme", "memes", "catmemes", "viral",
+    "fyp", "catlover", "catlife", "catvideo", "cats_of_instagram",
+    "lofi", "chill", "relaxing", "고양이", "냥냥", "귀여운", "쇼츠",
+]
+ANIME_CAT_HASHTAGS = [
+    "Shorts", "shorts", "cat", "cats", "anime", "animecat", "animeart",
+    "aiart", "aianimation", "aigenerated", "stablediffusion", "fantasy",
+    "mecha", "cute", "kawaii", "manga", "isekai", "viral", "fyp",
+    "catlover", "animefan", "고양이", "애니메이션", "쇼츠",
+]
+
+# 감정/훅을 제목에 이모지로 (30% 확률로 prefix)
+TITLE_EMOJIS = ["😹", "🙀", "😻", "🐾", "✨", "🔥", "💀", "😭"]
+
+
+def _build_title(title_pool: list[str]) -> str:
+    """제목 + 이모지 조합. 중복 방지를 위해 매번 변형."""
+    import random
+    title = random.choice(title_pool)
+    # 30% 확률로 이모지 prefix
+    if random.random() < 0.3:
+        title = f"{random.choice(TITLE_EMOJIS)} {title}"
+    return title
+
+
+def _build_description(title: str, hashtag_pool: list[str], variant_desc: str) -> tuple[str, list[str]]:
+    """설명문 + 태그 리스트 생성. 태그 다양화로 알고리즘 분산 노출."""
+    import random
+    # 해시태그 10개 랜덤 선택 (Shorts/shorts는 항상 포함)
+    essential = ["Shorts", "shorts"]
+    optional = [t for t in hashtag_pool if t not in essential]
+    picked = essential + random.sample(optional, min(10, len(optional)))
+    hashtag_line = " ".join(f"#{t}" for t in picked)
+    description = (
+        f"{title}\n\n"
+        f"{variant_desc}\n\n"
+        f"{hashtag_line}\n\n"
+        "Subscribe for daily cat shorts! 🐾"
+    )
+    return description, picked
 
 
 def pipeline_cat_single(
@@ -243,12 +316,10 @@ def pipeline_cat_single(
     log.info(f"  -> {final_path.name} ({final_path.stat().st_size // 1024}KB)")
 
     video_id = ""
-    title = random.choice(REAL_CAT_TITLES)
-    tags = ["Shorts", "cat", "funny", "lofi", "jazz", "cute", "kitten", "chill", "cats", "meme"]
-    description = (
-        f"{title}\n\n"
-        "#Shorts #cat #funny #lofi #jazz #cute #kitten #chill #cats #meme\n\n"
-        "Lofi jazz + chaotic cats = perfect combo"
+    title = _build_title(REAL_CAT_TITLES)
+    description, tags = _build_description(
+        title, REAL_CAT_HASHTAGS,
+        "Daily dose of chaotic cats with lofi jazz beats.\nBecause the internet needs more cats.",
     )
 
     if skip_upload:
@@ -289,12 +360,10 @@ def pipeline_anime_cat_single(
     log.info(f"  -> {final_path.name} ({final_path.stat().st_size // 1024}KB)")
 
     video_id = ""
-    title = random.choice(ANIME_CAT_TITLES)
-    tags = ["Shorts", "cat", "anime", "lofi", "jazz", "mecha", "funny", "ai", "art", "cats"]
-    description = (
-        f"{title}\n\n"
-        "#Shorts #cat #anime #lofi #jazz #mecha #funny #ai #art #cats\n\n"
-        "AI-generated anime cats with lofi jazz"
+    title = _build_title(ANIME_CAT_TITLES)
+    description, tags = _build_description(
+        title, ANIME_CAT_HASHTAGS,
+        "AI-generated anime cats with lofi jazz.\nFresh fantasy art every day.",
     )
 
     if skip_upload:

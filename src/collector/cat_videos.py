@@ -75,8 +75,8 @@ def _record_used(video_id: str):
     )
 
 
-def search_pexels(query: str, per_page: int = 15) -> list[dict]:
-    """Pexels API로 영상을 검색한다."""
+def search_pexels(query: str, per_page: int = 30) -> list[dict]:
+    """Pexels API로 영상을 검색한다. rank는 Pexels 응답 순서 = 관련성/인기도 프록시."""
     api_key = os.getenv("PEXELS_API_KEY")
     if not api_key:
         return []
@@ -115,8 +115,9 @@ def search_pexels(query: str, per_page: int = 15) -> list[dict]:
                 "width": v.get("width", 0),
                 "height": v.get("height", 0),
                 "files": v.get("video_files", []),
+                "rank": rank,  # 0 = Pexels 최상위 (가장 관련성·인기 있는 것)
             }
-            for v in videos
+            for rank, v in enumerate(videos)
         ]
     except Exception as e:
         log.warning(f"  Pexels search failed: {e}")
@@ -144,7 +145,7 @@ def search_pixabay(query: str, per_page: int = 15) -> list[dict]:
         hits = resp.json().get("hits", [])
 
         results = []
-        for v in hits:
+        for rank, v in enumerate(hits):
             # Pixabay video files
             vids = v.get("videos", {})
             files = []
@@ -165,6 +166,7 @@ def search_pixabay(query: str, per_page: int = 15) -> list[dict]:
                 "width": v.get("videos", {}).get("large", {}).get("width", 0),
                 "height": v.get("videos", {}).get("large", {}).get("height", 0),
                 "files": files,
+                "rank": rank,
             })
         return results
     except Exception as e:
@@ -186,17 +188,57 @@ def _pick_best_file(files: list[dict]) -> str | None:
     return None
 
 
+def _score_candidate(v: dict, sweet_spot: float = 22.0) -> float:
+    """후보 영상의 품질 점수를 계산한다.
+
+    Shorts 리텐션 근거:
+    - 15~30초가 완주율이 가장 높음 (22초 근처 피크)
+    - Pexels 상위 결과 = 관련성/인기도 프록시
+    - portrait 원본 > 크롭한 landscape (위아래 잘림 없음)
+    """
+    duration = v.get("duration", 0)
+    rank = v.get("rank", 50)
+    # duration 점수: sweet_spot에서 1.0, 멀어질수록 감소 (10초 차이 = 0.5 감소)
+    dur_score = max(0.0, 1.0 - abs(duration - sweet_spot) / 20.0)
+    # rank 점수: 0위 = 1.0, 30위 = 0.0
+    rank_score = max(0.0, 1.0 - rank / 30.0)
+    # portrait 보너스: 세로 영상이면 +0.3
+    aspect_bonus = 0.3 if v.get("height", 0) > v.get("width", 0) else 0.0
+    return dur_score * 0.5 + rank_score * 0.4 + aspect_bonus
+
+
+def _weighted_pick(candidates: list[dict], top_n: int = 10) -> list[dict]:
+    """상위 top_n 후보를 점수 기반 가중치로 재정렬한다.
+
+    shuffle하지 않음 — 상위권에 있을수록 뽑힐 확률이 높지만 완전 결정론적이진 않음.
+    """
+    if not candidates:
+        return []
+    top = candidates[:top_n]
+    # 점수를 weight로 사용하여 비복원 추출 (상위권이 더 자주 선택됨)
+    weights = [c["_score"] + 0.01 for c in top]  # 0 방지
+    picked = []
+    pool = list(top)
+    pool_weights = list(weights)
+    while pool:
+        idx = random.choices(range(len(pool)), weights=pool_weights, k=1)[0]
+        picked.append(pool.pop(idx))
+        pool_weights.pop(idx)
+    # 나머지는 그대로 뒤에 붙임
+    return picked + candidates[top_n:]
+
+
 def collect_cat_clips(
     count: int = 3,
-    min_duration: int = 15,
-    max_duration: int = 60,
+    min_duration: int = 10,
+    max_duration: int = 40,
 ) -> list[Path]:
     """고양이 영상 클립을 수집하여 다운로드한다.
 
     Args:
         count: 수집할 클립 수
-        min_duration: 최소 길이(초)
-        max_duration: 최대 길이(초)
+        min_duration: 최소 길이(초) — Shorts는 짧을수록 완주율↑
+        max_duration: 최대 길이(초) — 40초 이상이면 중간 이탈 급증
 
     Returns:
         다운로드된 영상 파일 경로 리스트
@@ -205,8 +247,8 @@ def collect_cat_clips(
     output_dir = VIDEO_DIR / "cats"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 랜덤 키워드로 검색
-    queries = random.sample(CAT_QUERIES, min(len(CAT_QUERIES), count * 3))
+    # 랜덤 키워드 3개로 풀을 넓힌다 (쿼리별 상위권 가능성↑)
+    queries = random.sample(CAT_QUERIES, min(len(CAT_QUERIES), max(3, count * 3)))
     all_videos = []
 
     for q in queries:
@@ -214,18 +256,21 @@ def collect_cat_clips(
         results += search_pixabay(q)
         all_videos.extend(results)
 
-        if len(all_videos) >= count * 5:
+        if len(all_videos) >= count * 10:
             break
 
-    # 필터링: 적절한 길이 + 미사용
+    # 필터링: 길이 + 미사용
     candidates = [
         v for v in all_videos
         if min_duration <= v["duration"] <= max_duration
         and v["id"] not in history
     ]
 
-    # 셔플해서 다양성 확보
-    random.shuffle(candidates)
+    # 점수 매기고 정렬
+    for c in candidates:
+        c["_score"] = _score_candidate(c)
+    candidates.sort(key=lambda c: c["_score"], reverse=True)
+    candidates = _weighted_pick(candidates, top_n=10)
 
     downloaded = []
     for v in candidates:
