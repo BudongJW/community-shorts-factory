@@ -31,10 +31,29 @@ HOOKS = [
 HOOK_DURATION = 1.2  # 초. 이 시간 지나면 페이드 아웃.
 HOOK_FADE = 0.3      # 페이드 아웃 길이(초)
 
+# 훅 위치 옵션. 동일 채널에서 매 영상 같은 위치면 포맷 단조로움.
+# ratio는 영상 높이 기준 y좌표 (0=최상단, 1=최하단).
+HOOK_POSITIONS = [
+    ("top", 0.18),      # 상단 1/5 지점 — 기본. 썸네일 영역과 겹침.
+    ("upper", 0.28),    # 상단 1/4 지점 — 얼굴 피하면서 시선 유지.
+    ("center", 0.42),   # 중앙 약간 위 — 고양이 얼굴 많을 때 가림 위험, 주의.
+    ("lower", 0.70),    # 하단 1/3 지점 — UI 아이콘과 겹치지 않도록 70% 이내.
+]
+
 
 def pick_hook() -> str:
     """랜덤 훅 문구 선택."""
     return random.choice(HOOKS)
+
+
+def pick_hook_position() -> tuple[str, float]:
+    """랜덤 훅 위치 선택. (이름, y_ratio) 반환.
+
+    top 위치에 가중치 — 쇼츠 시청자는 화면 상단 시선이 가장 먼저 닿음.
+    단, 매번 top이면 단조로워서 가끔 다른 위치 섞음.
+    """
+    weights = [0.5, 0.25, 0.10, 0.15]  # top, upper, center, lower
+    return random.choices(HOOK_POSITIONS, weights=weights, k=1)[0]
 
 
 def find_bold_font() -> str:
@@ -62,7 +81,7 @@ def find_bold_font() -> str:
     return "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 
-def ffmpeg_drawtext_filter(hook: str, video_h: int = 1920) -> str:
+def ffmpeg_drawtext_filter(hook: str, video_h: int = 1920, y_ratio: float = 0.18) -> str:
     """훅 텍스트를 FFmpeg drawtext 필터 expression으로 변환.
 
     첫 HOOK_DURATION 초 동안 표시하고 마지막 HOOK_FADE 초에 알파 fade out.
@@ -78,8 +97,7 @@ def ffmpeg_drawtext_filter(hook: str, video_h: int = 1920) -> str:
         .replace("%", "\\%")
     )
     font = find_bold_font().replace("\\", "/").replace(":", "\\:")
-    # 상단에서 1/4 지점에 배치
-    y = int(video_h * 0.18)
+    y = int(video_h * y_ratio)
     fade_start = HOOK_DURATION - HOOK_FADE
     # alpha expression: t<fade_start면 1, 이후 선형 감소
     alpha_expr = f"if(lt(t,{fade_start}),1,max(0,1-(t-{fade_start})/{HOOK_FADE}))"
@@ -94,7 +112,7 @@ def ffmpeg_drawtext_filter(hook: str, video_h: int = 1920) -> str:
     )
 
 
-def pil_draw_hook(pil_img, hook: str, progress: float):
+def pil_draw_hook(pil_img, hook: str, progress: float, y_ratio: float = 0.18):
     """PIL 이미지에 훅 텍스트를 in-place로 그린다.
 
     progress: 0.0(시작) ~ 1.0(HOOK_DURATION 끝)
@@ -125,7 +143,7 @@ def pil_draw_hook(pil_img, hook: str, progress: float):
     bbox = draw.textbbox((0, 0), hook, font=font)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
     x = (pil_img.width - tw) // 2 - bbox[0]
-    y = int(pil_img.height * 0.18)
+    y = int(pil_img.height * y_ratio)
 
     a = int(alpha * 255)
     # 검정 외곽선

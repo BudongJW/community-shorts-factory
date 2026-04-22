@@ -4,6 +4,7 @@ assets/bgm/ 디렉토리의 lofi jazz 트랙을 관리한다.
 트랙이 없으면 Pixabay Music API에서 무료 lofi 트랙을 다운로드한다.
 """
 
+import json
 import os
 import random
 from pathlib import Path
@@ -18,6 +19,9 @@ load_dotenv()
 log = setup_logger("lofi_music")
 
 BGM_DIR = Path(__file__).parent.parent.parent / "assets" / "bgm"
+BGM_HISTORY_PATH = Path(__file__).parent.parent.parent / "output" / "bgm_history.json"
+# 최근 사용 트랙 기록 슬라이딩 윈도우. 풀 크기의 절반 정도로 설정하면 같은 곡 반복 방지.
+BGM_HISTORY_MAX = 6
 
 # Pixabay Music API (무료, API 키 필요)
 PIXABAY_MUSIC_API = "https://pixabay.com/api/"
@@ -57,17 +61,48 @@ def download_pixabay_music(count: int = 5) -> list[Path]:
     return downloaded
 
 
-def pick_random_track() -> Path | None:
-    """랜덤 BGM 트랙을 선택한다.
+def _load_bgm_history() -> list[str]:
+    if BGM_HISTORY_PATH.exists():
+        try:
+            return list(json.loads(BGM_HISTORY_PATH.read_text(encoding="utf-8")))
+        except (ValueError, OSError):
+            return []
+    return []
 
-    Returns:
-        BGM 파일 경로 또는 None (트랙이 없을 때)
+
+def _record_bgm_used(track_name: str):
+    history = _load_bgm_history()
+    history = [n for n in history if n != track_name]
+    history.append(track_name)
+    if len(history) > BGM_HISTORY_MAX:
+        history = history[-BGM_HISTORY_MAX:]
+    BGM_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    BGM_HISTORY_PATH.write_text(
+        json.dumps(history, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def pick_random_track() -> Path | None:
+    """랜덤 BGM 트랙을 선택한다. 최근 사용한 트랙은 피한다.
+
+    같은 BGM이 연속 영상에 반복되면 "봇 계정" 시그널이 강해지므로
+    히스토리 윈도우 바깥 트랙에서만 고른다. 전부 사용 이력이면 제일 오래된 것부터.
     """
     tracks = _get_local_tracks()
     if not tracks:
         log.warning("  No BGM tracks found in assets/bgm/")
         return None
-    return random.choice(tracks)
+
+    history = _load_bgm_history()
+    # 풀이 작으면 한 트랙 걸러 반복되므로 윈도우를 풀 크기에 맞춰 조정 (과반은 제외).
+    window = min(BGM_HISTORY_MAX, max(1, len(tracks) - 1))
+    recent = set(history[-window:])
+    fresh = [t for t in tracks if t.name not in recent]
+    pool = fresh if fresh else tracks
+
+    chosen = random.choice(pool)
+    _record_bgm_used(chosen.name)
+    return chosen
 
 
 def pick_track_for_video(video_id: str) -> Path | None:

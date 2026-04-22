@@ -4,6 +4,7 @@ AI 이미지 시퀀스에 Ken Burns 효과(줌/팬)를 적용하고
 lofi jazz BGM을 얹어 Shorts 영상을 생성한다.
 """
 
+import random
 import shutil
 import subprocess
 import tempfile
@@ -16,7 +17,12 @@ import imageio_ffmpeg
 
 from config.settings import SHORTS_WIDTH, SHORTS_HEIGHT, SHORTS_FPS, FINAL_DIR
 from src.audio.lofi_music import pick_random_track
-from src.editor.hook_overlay import HOOK_DURATION, pick_hook, pil_draw_hook
+from src.editor.hook_overlay import (
+    HOOK_DURATION,
+    pick_hook,
+    pick_hook_position,
+    pil_draw_hook,
+)
 from src.utils.logger import setup_logger
 
 log = setup_logger("anime_cat_composer")
@@ -124,8 +130,14 @@ def compose_anime_cat(
 
     log.info(f"  {len(image_paths)} scenes, {total_sec:.0f}s total")
 
-    # Ken Burns 효과 패턴
-    effects = ["zoom_in", "zoom_out", "pan_up", "pan_down"]
+    # Ken Burns 효과 가중 랜덤 — 단조로운 순차 적용 회피.
+    # zoom_in이 가장 몰입감 높음 (시청자가 당겨지는 느낌). zoom_out은 이탈률 높아 비중 낮춤.
+    # 같은 영상 내 연속으로 같은 효과 금지 — 2개 이상 장면이면 직전과 다른 효과 뽑음.
+    effect_pool = ["zoom_in", "zoom_in", "zoom_in", "pan_up", "pan_down", "zoom_out"]
+    effect_seq: list[str] = []
+    for _ in range(len(image_paths)):
+        choices = [e for e in effect_pool if not effect_seq or e != effect_seq[-1]]
+        effect_seq.append(random.choice(choices))
 
     # BGM
     bgm_path = pick_random_track()
@@ -135,8 +147,10 @@ def compose_anime_cat(
     # 훅 오버레이 (첫 HOOK_DURATION 초만 표시)
     if hook is None:
         hook = pick_hook()
+    hook_y_ratio = 0.18
     if hook:
-        log.info(f"  hook: {hook}")
+        pos_name, hook_y_ratio = pick_hook_position()
+        log.info(f"  hook: {hook} @ {pos_name}")
     hook_end_frame = int(HOOK_DURATION * fps)
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -155,7 +169,7 @@ def compose_anime_cat(
                 log.warning(f"  image load failed: {e}")
                 continue
 
-            effect = effects[img_i % len(effects)]
+            effect = effect_seq[img_i]
 
             for f in range(frames_per_image):
                 progress = f / max(frames_per_image - 1, 1)
@@ -176,7 +190,7 @@ def compose_anime_cat(
                 # 첫 HOOK_DURATION 초 훅 오버레이
                 if hook and frame_idx < hook_end_frame:
                     progress = frame_idx / hook_end_frame
-                    frame = pil_draw_hook(frame, hook, progress)
+                    frame = pil_draw_hook(frame, hook, progress, y_ratio=hook_y_ratio)
 
                 frame.save(tmpdir_path / f"frame_{frame_idx:06d}.png")
                 frame_idx += 1

@@ -12,7 +12,7 @@ import imageio_ffmpeg
 
 from config.settings import SHORTS_WIDTH, SHORTS_HEIGHT, SHORTS_FPS, FINAL_DIR
 from src.audio.lofi_music import pick_random_track
-from src.editor.hook_overlay import ffmpeg_drawtext_filter, pick_hook
+from src.editor.hook_overlay import ffmpeg_drawtext_filter, pick_hook, pick_hook_position
 from src.utils.logger import setup_logger
 
 log = setup_logger("cat_composer")
@@ -112,8 +112,9 @@ def compose_cat_short(
     if hook is None:
         hook = pick_hook()
     if hook:
-        log.info(f"  hook: {hook}")
-        vf_parts.append(ffmpeg_drawtext_filter(hook, video_h=SHORTS_HEIGHT))
+        pos_name, y_ratio = pick_hook_position()
+        log.info(f"  hook: {hook} @ {pos_name}")
+        vf_parts.append(ffmpeg_drawtext_filter(hook, video_h=SHORTS_HEIGHT, y_ratio=y_ratio))
 
     vf = ",".join(vf_parts)
 
