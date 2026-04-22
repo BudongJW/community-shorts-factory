@@ -1,19 +1,20 @@
-name: Daily Cat Shorts (3/day - multi-slot)
+name: Daily Cat Shorts (multi-slot)
 
 on:
   schedule:
-    # 3개 슬롯으로 분산 — 한 채널에서 한 번에 3개 올리면 봇 냄새 나고
+    # 다중 슬롯 — 한 채널에서 한 번에 여러 개 올리면 봇 냄새 나고
     # 알고리즘이 동시 추천 안 하므로 타임존별 프라임타임에 쪼개서 배포.
     # cron은 UTC. 괄호 안은 KST / EST / PST 기준.
     - cron: '0 0 * * *'    # 09:00 KST / 19:00 EST (전일, 미동부 프라임)  → real
     - cron: '0 4 * * *'    # 13:00 KST / 20:00 PST (전일, 미서부 프라임)  → real
     - cron: '0 11 * * *'   # 20:00 KST 프라임 / 06:00 EST 출근            → anime
+    - cron: '0 14 * * *'   # 23:00 KST / 10:00 EST / 07:00 PST            → facts (education)
   workflow_dispatch:
     inputs:
       variant:
         description: "영상 종류"
         type: choice
-        options: [real, anime]
+        options: [real, anime, facts]
         default: real
 
 jobs:
@@ -58,6 +59,7 @@ jobs:
             '0 0 * * *') VARIANT=real ;;
             '0 4 * * *') VARIANT=real ;;
             '0 11 * * *') VARIANT=anime ;;
+            '0 14 * * *') VARIANT=facts ;;
             *) VARIANT="${{ github.event.inputs.variant || 'real' }}" ;;
           esac
 

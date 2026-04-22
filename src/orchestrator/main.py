@@ -22,6 +22,8 @@ from src.collector.cat_videos import collect_cat_clips
 from src.collector.ai_cat_images import generate_ai_cat_images
 from src.editor.cat_composer import compose_cat_short
 from src.editor.anime_cat_composer import compose_anime_cat
+from src.editor.cat_facts_composer import compose_cat_facts_short
+from src.facts.cat_facts import pick_cat_fact
 from src.collector.filter import filter_topics
 from src.collector.history import filter_new_topics, record_topic
 from src.script_gen.generator import generate
@@ -261,6 +263,14 @@ ANIME_CAT_HASHTAGS = [
     "mecha", "cute", "kawaii", "manga", "isekai", "viral", "fyp",
     "catlover", "animefan", "고양이", "애니메이션", "쇼츠",
 ]
+# Cat Facts (education 서브니치) — education RPM 진입 목표로 지식형 태그.
+FACTS_CAT_HASHTAGS = [
+    "Shorts", "shorts", "cat", "cats", "catfacts", "didyouknow",
+    "animalfacts", "learnontiktok", "learnonyoutube", "educational",
+    "catlover", "catsoftiktok", "catbehavior", "funfacts", "facts",
+    "kitten", "kittens", "cute", "cuteanimals", "science", "biology",
+    "nature", "petfacts", "pets", "viral", "fyp",
+]
 
 # 감정/훅을 제목에 이모지로 (30% 확률로 prefix)
 TITLE_EMOJIS = ["😹", "🙀", "😻", "🐾", "✨", "🔥", "💀", "😭"]
@@ -394,6 +404,90 @@ def pipeline_cat_single(
         "run_id": run_id,
         "title": title,
         "topic_source": clip.name,
+        "final_path": str(final_path),
+        "video_id": video_id,
+    }
+
+
+def pipeline_cat_facts_single(
+    skip_upload: bool = False,
+    run_id: str = "",
+) -> dict | None:
+    """Cat Facts 쇼츠 생성 파이프라인 (education 서브니치).
+
+    기존 cat 클립을 재활용하되 TTS 나레이션 + 자막을 얹어 교육 카테고리 진입.
+    Target RPM: $0.05~0.12 (entertainment cat의 2~5배).
+    """
+    if not run_id:
+        run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    log.info("[cat-facts 1/4] 고양이 팩트 선택 중...")
+    hook_text, narration_text = pick_cat_fact()
+    log.info(f"  fact: {hook_text}")
+
+    log.info("[cat-facts 2/4] TTS 나레이션 합성 중...")
+    try:
+        audio_path, srt_path, tts_meta = synthesize(
+            narration_text, filename=f"facts_{run_id}", language="en"
+        )
+    except Exception as e:
+        log.error(f"  TTS 실패: {e}")
+        return None
+    log.info(f"  voice: {tts_meta['voice']} rate: {tts_meta['rate']}")
+
+    log.info("[cat-facts 3/4] 고양이 영상 수집 중...")
+    clips = collect_cat_clips(count=1, min_duration=10, max_duration=40)
+    if not clips:
+        log.error("  고양이 영상 수집 실패")
+        return None
+    clip = clips[0]
+
+    log.info("[cat-facts 4/4] 나레이션+자막+클립 합성 중...")
+    final_path = compose_cat_facts_short(
+        video_path=clip,
+        narration_audio=audio_path,
+        narration_srt=srt_path,
+        hook_text=hook_text.upper(),  # 훅은 대문자 통일 (기존 채널 톤)
+        output_name=run_id,
+    )
+    log.info(f"  -> {final_path.name} ({final_path.stat().st_size // 1024}KB)")
+
+    video_id = ""
+    day_num = _peek_series_day("facts")
+    # Day N prefix는 해당 제목 빌더에 맡기되, facts는 hook_text를 제목 근간으로.
+    # 80% 기본 훅 제목, 20% Day N 시리즈형.
+    import random
+    if random.random() < 0.2:
+        title = f"Day {day_num} | {hook_text}"
+    else:
+        title = hook_text
+    description, tags = _build_description(
+        title, FACTS_CAT_HASHTAGS,
+        f"{narration_text}\n\nDay {day_num} — Daily cat facts with footage.",
+    )
+
+    if skip_upload:
+        log.info("[cat-facts] 업로드 건너뜀 (--skip-upload)")
+    else:
+        log.info("[cat-facts] YouTube 업로드 중...")
+        video_id = upload(final_path, title, description, tags)
+        log.info(f"  -> https://www.youtube.com/shorts/{video_id}")
+        _commit_series_day("facts", day_num)
+        try:
+            from src.analytics.stats import record_generation
+            record_generation(
+                video_id=video_id, variant="facts", title=title,
+                day_num=day_num,
+                target_duration=0.0,  # facts는 나레이션 길이에 따라 결정
+                hook=hook_text,
+            )
+        except Exception as e:
+            log.warning(f"  generation_log 기록 실패: {e}")
+
+    return {
+        "run_id": run_id,
+        "title": title,
+        "topic_source": hook_text,
         "final_path": str(final_path),
         "video_id": video_id,
     }
@@ -561,17 +655,14 @@ def pipeline(
     if mode == "cat":
         results = []
         failures = []
-        # cat_variant: auto(기존 로직) / real(전부 실사) / anime(전부 AI)
+        # cat_variant: auto(기존 로직) / real / anime / facts
         anime_idx = batch - 1  # auto일 때 마지막 1개만 애니메이션
         for i in range(batch):
-            if cat_variant == "real":
-                is_anime = False
-            elif cat_variant == "anime":
-                is_anime = True
-            else:  # auto
-                is_anime = (i == anime_idx) and batch > 1
+            if cat_variant in ("real", "anime", "facts"):
+                label = cat_variant
+            else:  # auto — 기존 동작 유지 (real 위주, 마지막만 anime)
+                label = "anime" if (i == anime_idx and batch > 1) else "real"
 
-            label = "anime" if is_anime else "real"
             if batch > 1:
                 log.info(f"\n{'--' * 20}")
                 log.info(f"  영상 {i + 1}/{batch} ({label})")
@@ -580,8 +671,10 @@ def pipeline(
             run_id = datetime.now().strftime("%Y%m%d_%H%M%S") + (f"_{i}" if batch > 1 else "")
 
             try:
-                if is_anime:
+                if label == "anime":
                     result = pipeline_anime_cat_single(skip_upload, run_id)
+                elif label == "facts":
+                    result = pipeline_cat_facts_single(skip_upload, run_id)
                 else:
                     result = pipeline_cat_single(skip_upload, run_id)
             except Exception as e:
@@ -715,8 +808,8 @@ def main():
                         help="영상 모드: narration(나레이션) / chat(채팅 썰) / cat(고양이)")
     parser.add_argument("--json", type=str, default=None,
                         help="chat 모드에서 직접 JSON 대본 경로 지정")
-    parser.add_argument("--cat-variant", choices=["auto", "real", "anime"], default="auto",
-                        help="cat 모드 영상 종류 강제 (auto=마지막만 anime)")
+    parser.add_argument("--cat-variant", choices=["auto", "real", "anime", "facts"], default="auto",
+                        help="cat 모드 영상 종류 강제 (auto=마지막만 anime / facts=교육형 나레이션)")
     args = parser.parse_args()
 
     result = pipeline(
