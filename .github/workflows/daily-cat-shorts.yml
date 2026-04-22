@@ -45,6 +45,8 @@ jobs:
 
       - name: Determine slot variant
         id: slot
+        # anime는 격일제(짝수일만). 정책상 AI 이미지 비중을 낮춰 'inauthentic content' 판정 회피.
+        # 수동 트리거는 day-of-year 체크 스킵.
         run: |
           case "${{ github.event.schedule }}" in
             '0 0 * * *') VARIANT=real ;;
@@ -52,11 +54,23 @@ jobs:
             '0 11 * * *') VARIANT=anime ;;
             *) VARIANT="${{ github.event.inputs.variant || 'real' }}" ;;
           esac
+
+          SKIP=false
+          if [ "$VARIANT" = "anime" ] && [ -n "${{ github.event.schedule }}" ]; then
+            DOY=$(date -u +%-j)
+            if [ $((DOY % 2)) -ne 0 ]; then
+              SKIP=true
+              echo "anime slot skipped on odd day-of-year ($DOY)"
+            fi
+          fi
+
           echo "variant=$VARIANT" >> "$GITHUB_OUTPUT"
-          echo "slot variant: $VARIANT"
+          echo "skip=$SKIP" >> "$GITHUB_OUTPUT"
+          echo "slot variant: $VARIANT, skip: $SKIP"
 
       - name: Generate and upload cat short
         id: generate
+        if: steps.slot.outputs.skip != 'true'
         env:
           CI: true
           PYTHONIOENCODING: utf-8
