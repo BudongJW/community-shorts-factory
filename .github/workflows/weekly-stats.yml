@@ -1,0 +1,70 @@
+name: Weekly Stats Snapshot
+
+on:
+  schedule:
+    # 매주 월요일 01:00 UTC (10:00 KST). 주간 누적 stats 갱신 + 요약 리포트.
+    - cron: '0 1 * * 1'
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Snapshot stats + summarize
+        env:
+          PYTHONIOENCODING: utf-8
+          YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
+          YOUTUBE_TOKEN_REFRESH_OUT: ${{ github.workspace }}/refreshed_token.json
+        run: |
+          python -m src.analytics.stats --snapshot --summary --limit 100
+
+      - name: Rotate token if refreshed
+        if: hashFiles('refreshed_token.json') != ''
+        env:
+          GH_TOKEN: ${{ secrets.YOUTUBE_TOKEN_UPDATE_PAT }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "PAT not set - skipping"
+            exit 0
+          fi
+          gh secret set YOUTUBE_TOKEN_JSON \
+            --body "$(cat refreshed_token.json)" \
+            --repo ${{ github.repository }}
+          rm -f refreshed_token.json
+
+      - name: Commit stats
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          changed=false
+          for f in output/video_stats.json; do
+            if [ -f "$f" ]; then
+              git add -f "$f"
+              changed=true
+            fi
+          done
+          if [ "$changed" = "true" ] && ! git diff --cached --quiet; then
+            git commit -m "chore(stats): weekly snapshot [skip ci]"
+            for i in 1 2 3; do
+              git pull --rebase origin master && git push origin HEAD:master && break
+              sleep 5
+            done
+          fi

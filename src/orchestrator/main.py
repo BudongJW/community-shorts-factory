@@ -381,6 +381,14 @@ def pipeline_cat_single(
         video_id = upload(final_path, title, description, tags)
         log.info(f"  -> https://www.youtube.com/shorts/{video_id}")
         _commit_series_day("real", day_num)
+        try:
+            from src.analytics.stats import record_generation
+            record_generation(
+                video_id=video_id, variant="real", title=title,
+                day_num=day_num, target_duration=target_sec, hook=None,
+            )
+        except Exception as e:
+            log.warning(f"  generation_log 기록 실패: {e}")
 
     return {
         "run_id": run_id,
@@ -429,6 +437,14 @@ def pipeline_anime_cat_single(
         video_id = upload(final_path, title, description, tags)
         log.info(f"  -> https://www.youtube.com/shorts/{video_id}")
         _commit_series_day("anime", day_num)
+        try:
+            from src.analytics.stats import record_generation
+            record_generation(
+                video_id=video_id, variant="anime", title=title,
+                day_num=day_num, target_duration=target_sec, hook=None,
+            )
+        except Exception as e:
+            log.warning(f"  generation_log 기록 실패: {e}")
 
     return {
         "run_id": run_id,

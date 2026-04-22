@@ -124,7 +124,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           changed=false
-          for f in output/series_counter.json output/cat_video_history.json output/bgm_history.json; do
+          for f in output/series_counter.json output/cat_video_history.json output/bgm_history.json output/generation_log.json; do
             if [ -f "$f" ]; then
               git add -f "$f"
               changed=true
