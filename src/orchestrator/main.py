@@ -265,14 +265,47 @@ ANIME_CAT_HASHTAGS = [
 # 감정/훅을 제목에 이모지로 (30% 확률로 prefix)
 TITLE_EMOJIS = ["😹", "🙀", "😻", "🐾", "✨", "🔥", "💀", "😭"]
 
+# variant별 "Day N" 시리즈 카운터 — 누적 업로드 수로 연속성 연출.
+# 시리즈물 포맷은 알고리즘상 "같은 채널 반복 시청" 신호 강화 + 시청자가 다음 편 기대.
+SERIES_COUNTER_PATH = Path("output") / "series_counter.json"
 
-def _build_title(title_pool: list[str]) -> str:
-    """제목 + 이모지 조합. 중복 방지를 위해 매번 변형."""
+
+def _load_series_counters() -> dict:
+    if SERIES_COUNTER_PATH.exists():
+        try:
+            return json.loads(SERIES_COUNTER_PATH.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            return {}
+    return {}
+
+
+def _peek_series_day(variant: str) -> int:
+    """variant별 Day N 번호를 미리 본다. 저장은 하지 않음."""
+    counters = _load_series_counters()
+    return int(counters.get(variant, 0)) + 1
+
+
+def _commit_series_day(variant: str, day_num: int):
+    """업로드 성공 후 카운터를 커밋한다. 중복 호출해도 day_num 유지."""
+    counters = _load_series_counters()
+    counters[variant] = day_num
+    SERIES_COUNTER_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SERIES_COUNTER_PATH.write_text(
+        json.dumps(counters, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def _build_title(title_pool: list[str], day_num: int | None = None) -> str:
+    """제목 + 이모지 + 옵션 Day N 시리즈 넘버링.
+
+    day_num 있으면 40% 확률로 "Day N | " prefix 추가 (매번 넣으면 스팸 시그널).
+    """
     import random
     title = random.choice(title_pool)
-    # 30% 확률로 이모지 prefix
     if random.random() < 0.3:
         title = f"{random.choice(TITLE_EMOJIS)} {title}"
+    if day_num is not None and random.random() < 0.4:
+        title = f"Day {day_num} | {title}"
     return title
 
 
@@ -316,10 +349,12 @@ def pipeline_cat_single(
     log.info(f"  -> {final_path.name} ({final_path.stat().st_size // 1024}KB)")
 
     video_id = ""
-    title = _build_title(REAL_CAT_TITLES)
+    day_num = _peek_series_day("real")
+    title = _build_title(REAL_CAT_TITLES, day_num=day_num)
     description, tags = _build_description(
         title, REAL_CAT_HASHTAGS,
-        "Daily dose of chaotic cats with lofi jazz beats.\nBecause the internet needs more cats.",
+        f"Daily dose of chaotic cats with lofi jazz beats. Day {day_num} of the series.\n"
+        "Because the internet needs more cats.",
     )
 
     if skip_upload:
@@ -328,6 +363,7 @@ def pipeline_cat_single(
         log.info("[cat 3/3] YouTube 업로드 중...")
         video_id = upload(final_path, title, description, tags)
         log.info(f"  -> https://www.youtube.com/shorts/{video_id}")
+        _commit_series_day("real", day_num)
 
     return {
         "run_id": run_id,
@@ -360,10 +396,12 @@ def pipeline_anime_cat_single(
     log.info(f"  -> {final_path.name} ({final_path.stat().st_size // 1024}KB)")
 
     video_id = ""
-    title = _build_title(ANIME_CAT_TITLES)
+    day_num = _peek_series_day("anime")
+    title = _build_title(ANIME_CAT_TITLES, day_num=day_num)
     description, tags = _build_description(
         title, ANIME_CAT_HASHTAGS,
-        "AI-generated anime cats with lofi jazz.\nFresh fantasy art every day.",
+        f"AI-generated anime cats with lofi jazz. Day {day_num} of the series.\n"
+        "Fresh fantasy art every day.",
     )
 
     if skip_upload:
@@ -372,6 +410,7 @@ def pipeline_anime_cat_single(
         log.info("[anime-cat 3/3] YouTube 업로드 중...")
         video_id = upload(final_path, title, description, tags)
         log.info(f"  -> https://www.youtube.com/shorts/{video_id}")
+        _commit_series_day("anime", day_num)
 
     return {
         "run_id": run_id,

@@ -109,6 +109,34 @@ jobs:
         if: always()
         run: rm -f refreshed_token.json
 
+      - name: Persist state files (series counter / history)
+        # CI 체크아웃은 매번 깨끗한 상태라 누적 카운터·히스토리가 리셋됨.
+        # 업로드 성공 후 상태 파일을 레포에 push하여 다음 run에서 이어받도록.
+        if: steps.generate.outcome == 'success'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          changed=false
+          for f in output/series_counter.json output/cat_video_history.json output/bgm_history.json; do
+            if [ -f "$f" ]; then
+              git add -f "$f"
+              changed=true
+            fi
+          done
+
+          if [ "$changed" = "true" ] && ! git diff --cached --quiet; then
+            git commit -m "chore(state): update series counter/history [skip ci]"
+            # 동시 run 대비 rebase retry 최대 3회
+            for i in 1 2 3; do
+              git pull --rebase origin master && git push origin HEAD:master && break
+              echo "push retry $i"
+              sleep 5
+            done
+          else
+            echo "no state changes to persist"
+          fi
+
       - name: Upload artifacts (backup)
         if: always()
         uses: actions/upload-artifact@v4
