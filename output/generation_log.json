@@ -79,5 +79,14 @@
     "target_duration": 23.3,
     "hook": "",
     "uploaded_at": "2026-05-01T06:44:10Z"
+  },
+  {
+    "video_id": "7KOLAYtR2VE",
+    "variant": "facts",
+    "title": "Why cats wag their tails",
+    "day": 3,
+    "target_duration": 0.0,
+    "hook": "Why cats wag their tails",
+    "uploaded_at": "2026-05-01T15:01:26Z"
   }
 ]
