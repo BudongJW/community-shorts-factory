@@ -115,5 +115,14 @@
     "target_duration": 24.5,
     "hook": "",
     "uploaded_at": "2026-05-02T12:08:57Z"
+  },
+  {
+    "video_id": "OrcvmLckCYU",
+    "variant": "facts",
+    "title": "Cats were worshipped as gods",
+    "day": 4,
+    "target_duration": 0.0,
+    "hook": "Cats were worshipped as gods",
+    "uploaded_at": "2026-05-02T14:54:15Z"
   }
 ]
