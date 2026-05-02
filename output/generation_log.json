@@ -88,5 +88,14 @@
     "target_duration": 0.0,
     "hook": "Why cats wag their tails",
     "uploaded_at": "2026-05-01T15:01:26Z"
+  },
+  {
+    "video_id": "GxkVBnRZ5Uk",
+    "variant": "real",
+    "title": "Cats vs gravity",
+    "day": 7,
+    "target_duration": 35.1,
+    "hook": "",
+    "uploaded_at": "2026-05-02T01:57:14Z"
   }
 ]
