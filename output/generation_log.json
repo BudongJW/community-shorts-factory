@@ -142,5 +142,14 @@
     "target_duration": 28.8,
     "hook": "",
     "uploaded_at": "2026-05-03T06:33:47Z"
+  },
+  {
+    "video_id": "cNbWqF7Kr24",
+    "variant": "facts",
+    "title": "Why cats meow at humans",
+    "day": 5,
+    "target_duration": 0.0,
+    "hook": "Why cats meow at humans",
+    "uploaded_at": "2026-05-03T14:54:19Z"
   }
 ]
