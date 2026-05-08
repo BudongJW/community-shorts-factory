@@ -286,5 +286,14 @@
     "target_duration": 33.0,
     "hook": "",
     "uploaded_at": "2026-05-08T12:31:37Z"
+  },
+  {
+    "video_id": "KT7pq3kmNss",
+    "variant": "facts",
+    "title": "Why cats go crazy at 3am",
+    "day": 9,
+    "target_duration": 0.0,
+    "hook": "Why cats go crazy at 3am",
+    "uploaded_at": "2026-05-08T15:28:57Z"
   }
 ]
