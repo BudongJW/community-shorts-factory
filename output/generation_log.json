@@ -313,5 +313,14 @@
     "target_duration": 19.6,
     "hook": "",
     "uploaded_at": "2026-05-09T06:24:16Z"
+  },
+  {
+    "video_id": "RdQ8UrI_PUo",
+    "variant": "facts",
+    "title": "Day 10 | Cats can jump 6x their height",
+    "day": 10,
+    "target_duration": 0.0,
+    "hook": "Cats can jump 6x their height",
+    "uploaded_at": "2026-05-09T14:57:17Z"
   }
 ]
