@@ -340,5 +340,14 @@
     "target_duration": 22.3,
     "hook": "",
     "uploaded_at": "2026-05-10T06:40:19Z"
+  },
+  {
+    "video_id": "u5OXrduX3-0",
+    "variant": "facts",
+    "title": "Cats have 24 whiskers",
+    "day": 11,
+    "target_duration": 0.0,
+    "hook": "Cats have 24 whiskers",
+    "uploaded_at": "2026-05-10T14:58:49Z"
   }
 ]
