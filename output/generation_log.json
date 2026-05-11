@@ -349,5 +349,14 @@
     "target_duration": 0.0,
     "hook": "Cats have 24 whiskers",
     "uploaded_at": "2026-05-10T14:58:49Z"
+  },
+  {
+    "video_id": "pjeN4oNgwtk",
+    "variant": "real",
+    "title": "Average day as a cat owner",
+    "day": 25,
+    "target_duration": 28.9,
+    "hook": "",
+    "uploaded_at": "2026-05-11T02:14:00Z"
   }
 ]
