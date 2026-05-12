@@ -403,5 +403,14 @@
     "target_duration": 20.2,
     "hook": "",
     "uploaded_at": "2026-05-12T13:22:30Z"
+  },
+  {
+    "video_id": "24d6erIds0Y",
+    "variant": "facts",
+    "title": "Why orange cats are mostly male",
+    "day": 13,
+    "target_duration": 0.0,
+    "hook": "Why orange cats are mostly male",
+    "uploaded_at": "2026-05-12T16:24:46Z"
   }
 ]
