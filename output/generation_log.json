@@ -430,5 +430,14 @@
     "target_duration": 19.4,
     "hook": "",
     "uploaded_at": "2026-05-13T07:02:43Z"
+  },
+  {
+    "video_id": "T6O22mhal0o",
+    "variant": "facts",
+    "title": "Cats have over 100 sounds",
+    "day": 14,
+    "target_duration": 0.0,
+    "hook": "Cats have over 100 sounds",
+    "uploaded_at": "2026-05-13T16:25:05Z"
   }
 ]
