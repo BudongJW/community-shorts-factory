@@ -13,6 +13,10 @@ on:
         type: choice
         options: [abandoned, everyday]
         default: abandoned
+      skip_upload:
+        description: "업로드 없이 생성·합성만 (검증용)"
+        type: boolean
+        default: false
 
 jobs:
   generate-and-upload:
@@ -66,14 +70,19 @@ jobs:
           YOUTUBE_TOKEN_REFRESH_OUT: ${{ github.workspace }}/refreshed_token.json
         run: |
           set +e
+          SKIP=""
+          if [ "${{ github.event.inputs.skip_upload }}" = "true" ]; then
+            SKIP="--skip-upload"
+            echo "검증 모드: 업로드 생략"
+          fi
           python -m src.orchestrator.main --mode horror --batch 1 \
-            --horror-variant "${{ steps.slot.outputs.variant }}"
+            --horror-variant "${{ steps.slot.outputs.variant }}" $SKIP
           code=$?
           if [ $code -eq 2 ]; then
             echo "total failure (exit 2) — 60s 후 1회 재시도"
             sleep 60
             python -m src.orchestrator.main --mode horror --batch 1 \
-              --horror-variant "${{ steps.slot.outputs.variant }}"
+              --horror-variant "${{ steps.slot.outputs.variant }}" $SKIP
             code=$?
           fi
           exit $code
