@@ -16,6 +16,9 @@ output/audio/*
 output/video/*
 output/srt/*
 output/final/*
+output/ai_horror/*
+output/ai_cats/*
+output/images/*
 !output/**/.gitkeep
 
 # IDE

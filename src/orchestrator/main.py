@@ -24,6 +24,8 @@ from src.editor.cat_composer import compose_cat_short
 from src.editor.anime_cat_composer import compose_anime_cat
 from src.editor.cat_facts_composer import compose_cat_facts_short
 from src.facts.cat_facts import pick_cat_fact
+from src.collector.ai_horror_images import generate_horror_images
+from src.editor.horror_composer import compose_horror_short
 from src.collector.filter import filter_topics
 from src.collector.history import filter_new_topics, record_topic
 from src.script_gen.generator import generate
@@ -335,8 +337,16 @@ def _build_title(title_pool: list[str], day_num: int | None = None) -> str:
     return title
 
 
-def _build_description(title: str, hashtag_pool: list[str], variant_desc: str) -> tuple[str, list[str]]:
-    """설명문 + 태그 리스트 생성. 태그 다양화로 알고리즘 분산 노출."""
+def _build_description(
+    title: str,
+    hashtag_pool: list[str],
+    variant_desc: str,
+    cta: str = "Subscribe for daily cat shorts! 🐾",
+) -> tuple[str, list[str]]:
+    """설명문 + 태그 리스트 생성. 태그 다양화로 알고리즘 분산 노출.
+
+    cta: 설명 마지막 줄(구독 유도). 모드별로 다르게 지정. 기본값은 cat 모드용.
+    """
     import random
     # 해시태그 10개 랜덤 선택 (Shorts/shorts는 항상 포함)
     essential = ["Shorts", "shorts"]
@@ -347,7 +357,7 @@ def _build_description(title: str, hashtag_pool: list[str], variant_desc: str) -
         f"{title}\n\n"
         f"{variant_desc}\n\n"
         f"{hashtag_line}\n\n"
-        "Subscribe for daily cat shorts! 🐾"
+        f"{cta}"
     )
     return description, picked
 
@@ -549,6 +559,122 @@ def pipeline_anime_cat_single(
     }
 
 
+# ═══════════════════════════════════════════════════════════
+#  Horror 모드 — 폐가 탐험 / 일상 괴담 점프스케어 쇼츠
+# ═══════════════════════════════════════════════════════════
+
+# variant별 제목 풀 (한국어, 종이필름 스타일 클릭 유도).
+# 나레이션이 없으므로 제목이 궁금증/공포를 만들어야 함.
+HORROR_TITLES = {
+    "abandoned": [
+        "이 폐가에서 절대 뒤돌아보지 마세요",
+        "폐가 마지막 방에서 찍힌 것",
+        "아무도 없어야 할 폐건물에서",
+        "소리 켜고 보세요 (폐가)",
+        "이 영상 마지막 3초 조심",
+        "폐가 탐험하다 찍힌 실체",
+        "여기서 나가야 했는데",
+        "혼자 보면 안 되는 폐가 영상",
+        "폐가 지하에서 만난 것",
+        "끝까지 본 사람만 봤다는 장면",
+        "새벽에 이 폐가를 들어갔더니",
+        "왜 문이 저절로 닫혔을까",
+    ],
+    "everyday": [
+        "이 방에서 이상한 거 찾으셨나요",
+        "평범한 자취방인 줄 알았는데",
+        "끝까지 보면 소름 돋는 영상",
+        "이 교실에서 뭔가 잘못됐다",
+        "당신 뒤에 뭔가 있어요",
+        "소리 켜고 마지막까지 보세요",
+        "스터디카페에서 찍힌 것",
+        "이거 보이면 도망치세요",
+        "일상 속에 숨어있던 존재",
+        "혼자 있을 때 보지 마세요",
+        "거울을 다시 보세요",
+        "0.5초만 눈 깜빡여도 놓칩니다",
+    ],
+}
+
+HORROR_HASHTAGS = [
+    "Shorts", "shorts", "공포", "공포영상", "무서운영상", "괴담", "호러", "horror",
+    "creepy", "scary", "jumpscare", "점프스케어", "폐가", "폐가체험", "심령",
+    "무서운이야기", "괴담라디오", "소름", "ai호러", "analoghorror", "creepypasta",
+    "귀신", "심령스팟", "밤에보는영상", "쇼츠",
+]
+
+# variant별 Day N 시리즈 카운터 재사용 (cat 모드와 동일 저장소).
+HORROR_VARIANT_DESC = {
+    "abandoned": "폐가를 탐험하다 마주친 것. 소리를 켜고 끝까지 보세요.",
+    "everyday": "평범한 일상에 숨어있던 존재. 마지막 장면을 놓치지 마세요.",
+}
+
+
+def pipeline_horror_single(
+    variant: str = "abandoned",
+    skip_upload: bool = False,
+    run_id: str = "",
+) -> dict | None:
+    """AI 공포 점프스케어 쇼츠 생성 파이프라인 (나레이션 없음)."""
+    import random
+    if not run_id:
+        run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    log.info(f"[horror 1/2] AI 공포 장면 생성 중 (variant={variant})...")
+    img_dir = Path("output") / "ai_horror" / run_id
+    build_paths, scare_path = generate_horror_images(
+        variant=variant, num_scenes=6, output_dir=img_dir
+    )
+    if not build_paths:
+        log.error("  공포 이미지 생성 실패")
+        return None
+    log.info(f"  -> 빌드업 {len(build_paths)}장 + 점프스케어 {'O' if scare_path else 'X'}")
+
+    bucket_name, target_sec = _pick_target_duration()
+    log.info(f"[horror 2/2] 워킹 줌 + 점프스케어 합성 중 (target: {bucket_name} {target_sec:.0f}s)...")
+    final_path = compose_horror_short(
+        build_paths, scare_path, output_name=run_id, target_duration=target_sec
+    )
+    log.info(f"  -> {final_path.name} ({final_path.stat().st_size // 1024}KB)")
+
+    video_id = ""
+    day_num = _peek_series_day(f"horror_{variant}")
+    title_pool = HORROR_TITLES.get(variant, HORROR_TITLES["abandoned"])
+    title = random.choice(title_pool)
+    if day_num is not None and random.random() < 0.35:
+        title = f"[{day_num}일차] {title}"
+
+    description, tags = _build_description(
+        title, HORROR_HASHTAGS,
+        f"{HORROR_VARIANT_DESC.get(variant, '')}\n{day_num}일차 공포 시리즈.",
+        cta="매일 밤 올라오는 공포 쇼츠 — 구독하고 놓치지 마세요.",
+    )
+
+    if skip_upload:
+        log.info("[horror] 업로드 건너뜀 (--skip-upload)")
+    else:
+        log.info("[horror] YouTube 업로드 중...")
+        video_id = upload(final_path, title, description, tags)
+        log.info(f"  -> https://www.youtube.com/shorts/{video_id}")
+        _commit_series_day(f"horror_{variant}", day_num)
+        try:
+            from src.analytics.stats import record_generation
+            record_generation(
+                video_id=video_id, variant=f"horror_{variant}", title=title,
+                day_num=day_num, target_duration=target_sec, hook=None,
+            )
+        except Exception as e:
+            log.warning(f"  generation_log 기록 실패: {e}")
+
+    return {
+        "run_id": run_id,
+        "title": title,
+        "topic_source": f"horror_{variant}",
+        "final_path": str(final_path),
+        "video_id": video_id,
+    }
+
+
 def pipeline_single(
     posts,
     llm_provider: str = "groq",
@@ -632,6 +758,7 @@ def pipeline(
     mode: str = "narration",
     json_path: str | None = None,
     cat_variant: str = "auto",
+    horror_variant: str = "abandoned",
 ):
     """전체 파이프라인.
 
@@ -641,9 +768,10 @@ def pipeline(
         skip_upload: True면 업로드 건너뜀
         dry_run: True면 수집+대본까지만
         batch: 생성할 영상 수
-        mode: "narration" (기존) 또는 "chat" (채팅 썰)
+        mode: "narration"(기존) / "chat"(채팅 썰) / "cat"(고양이) / "horror"(공포)
         json_path: chat 모드에서 직접 JSON 대본 경로 지정
         cat_variant: "auto"(기존, 마지막만 anime) / "real" / "anime" — cat 모드에서 영상 종류 강제
+        horror_variant: "abandoned"(폐가 탐험) / "everyday"(일상 괴담) — horror 모드 영상 종류
     """
     log.info("")
     log.info("=" * 50)
@@ -690,6 +818,39 @@ def pipeline(
         log.info("")
         log.info("=" * 50)
         log.info(f"  Cat Pipeline 완료! ({len(results)}/{batch}편)")
+        log.info("=" * 50)
+        for r in results:
+            log.info(f"  [{r['run_id']}] {r['title']} -> {r['final_path']}")
+        if failures:
+            log.error(f"  실패 {len(failures)}편:")
+            for idx, label, err in failures:
+                log.error(f"    #{idx + 1} ({label}): {err}")
+        return {"success": len(results), "failures": len(failures), "batch": batch}
+
+    # ── horror 모드: AI 공포 점프스케어 쇼츠 (커뮤니티 수집 불필요) ──
+    if mode == "horror":
+        results = []
+        failures = []
+        for i in range(batch):
+            if batch > 1:
+                log.info(f"\n{'--' * 20}")
+                log.info(f"  영상 {i + 1}/{batch} (horror/{horror_variant})")
+                log.info(f"{'--' * 20}")
+            run_id = datetime.now().strftime("%Y%m%d_%H%M%S") + (f"_{i}" if batch > 1 else "")
+            try:
+                result = pipeline_horror_single(horror_variant, skip_upload, run_id)
+            except Exception as e:
+                log.exception(f"  영상 {i + 1}/{batch} 실패: {e}")
+                failures.append((i, horror_variant, str(e)))
+                continue
+            if result:
+                results.append(result)
+            else:
+                failures.append((i, horror_variant, "pipeline returned None"))
+
+        log.info("")
+        log.info("=" * 50)
+        log.info(f"  Horror Pipeline 완료! ({len(results)}/{batch}편)")
         log.info("=" * 50)
         for r in results:
             log.info(f"  [{r['run_id']}] {r['title']} -> {r['final_path']}")
@@ -804,12 +965,14 @@ def main():
     parser.add_argument("--skip-upload", action="store_true", help="YouTube 업로드 건너뜀")
     parser.add_argument("--dry-run", action="store_true", help="수집+대본까지만")
     parser.add_argument("--batch", type=int, default=1, help="생성할 영상 수 (기본 1)")
-    parser.add_argument("--mode", choices=["narration", "chat", "cat"], default="narration",
-                        help="영상 모드: narration(나레이션) / chat(채팅 썰) / cat(고양이)")
+    parser.add_argument("--mode", choices=["narration", "chat", "cat", "horror"], default="narration",
+                        help="영상 모드: narration(나레이션) / chat(채팅 썰) / cat(고양이) / horror(공포)")
     parser.add_argument("--json", type=str, default=None,
                         help="chat 모드에서 직접 JSON 대본 경로 지정")
     parser.add_argument("--cat-variant", choices=["auto", "real", "anime", "facts"], default="auto",
                         help="cat 모드 영상 종류 강제 (auto=마지막만 anime / facts=교육형 나레이션)")
+    parser.add_argument("--horror-variant", choices=["abandoned", "everyday"], default="abandoned",
+                        help="horror 모드 영상 종류 (abandoned=폐가 탐험 / everyday=일상 괴담)")
     args = parser.parse_args()
 
     result = pipeline(
@@ -821,6 +984,7 @@ def main():
         mode=args.mode,
         json_path=args.json,
         cat_variant=args.cat_variant,
+        horror_variant=args.horror_variant,
     )
 
     # cat 모드의 경우 부분 실패를 non-zero exit code로 신호

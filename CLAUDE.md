@@ -25,6 +25,20 @@
 -> YouTube 업로드 (API v3)
 ```
 
+### horror 모드 (공포 점프스케어 쇼츠) ⭐ 현재 메인
+종이필름(Jongie Film) 스타일. 나레이션 없음. 완전 무료(Pollinations 키 불필요).
+```
+Pollinations AI 공포 장면 생성 (폐가/일상 괴담 시퀀스)
+-> 워킹 줌(전진) + 손전등 비네트 + 게임 HUD(크로스헤어/REC/조사프롬프트)
+-> 후반부 긴장 고조(어두움/붉은기/그레인) + 마지막 점프스케어(급확대+플래시)
+-> numpy 합성 공포 앰비언트 + 라이저 + 점프스케어 굉음
+-> FFmpeg MP4 합성 -> YouTube 업로드 (API v3)
+```
+- variant: `abandoned`(폐가 탐험) / `everyday`(일상 괴담)
+- 관련 파일: `src/collector/ai_horror_images.py`, `src/editor/horror_composer.py`,
+  `pipeline_horror_single()` in `src/orchestrator/main.py`
+- 워크플로우: `.github/workflows/daily-horror-shorts.yml` (하루 2슬롯: 21시/자정 KST)
+
 ## 현재 상태 (2026-04-16 기준)
 - **e2e 테스트 통과**: 두 모드 모두 `--skip-upload`로 동작 확인됨
 - **chat 모드**: Pillow 기반 메신저 스타일 채팅 UI 렌더링 (API 비용 $0)

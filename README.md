@@ -5,6 +5,22 @@
 
 ## 영상 모드
 
+### 0. horror 모드 (공포 점프스케어 쇼츠) ⭐ 현재 메인
+종이필름 스타일. 폐가 탐험/일상 괴담을 1인칭 게임처럼 연출하고 마지막에 점프스케어.
+나레이션 없음. Pollinations(무료·키 불필요)로 장면 생성 → 워킹 줌 + 손전등 비네트 +
+게임 HUD + 점프스케어 + numpy 합성 공포 사운드.
+
+```
+Pollinations 공포 장면 생성 -> 워킹 줌 + 손전등/HUD -> 점프스케어 + 공포 앰비언트 -> MP4 -> YouTube
+```
+
+```bash
+# 폐가 탐험
+PYTHONIOENCODING=utf-8 python -m src.orchestrator.main --mode horror --horror-variant abandoned --skip-upload
+# 일상 괴담
+PYTHONIOENCODING=utf-8 python -m src.orchestrator.main --mode horror --horror-variant everyday --skip-upload
+```
+
 ### 1. chat 모드 (메신저 채팅 썰)
 커뮤니티 글을 카카오톡 스타일 대화 영상으로 변환한다.
 말풍선 순차 등장 + 타이핑 인디케이터 + 스크롤 애니메이션.
